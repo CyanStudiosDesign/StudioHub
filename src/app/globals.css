@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #18181b;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.command-menu-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #d4d4d8 transparent;
+}
+
+.command-menu-scrollbar::-webkit-scrollbar {
+  width: 10px;
+}
+
+.command-menu-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.command-menu-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #e4e4e7, #c4c4cc);
+  border: 3px solid rgba(255, 255, 255, 0.92);
+  border-radius: 999px;
+}
+
+.command-menu-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #d4d4d8, #a1a1aa);
+}
