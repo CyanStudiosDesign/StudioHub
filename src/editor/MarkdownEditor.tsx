@@ -5,6 +5,7 @@ import {
   FormEvent,
   KeyboardEvent,
   PointerEvent,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -37,6 +38,7 @@ type Command = {
 };
 
 const storageKey = "studio-hub-markdown-editor-v2";
+const autosaveDelayMs = 5000;
 
 const commands: Command[] = [
   {
@@ -215,6 +217,13 @@ function markdownToEditorBlocks(markdown: string) {
   return [createBlock("paragraph", markdown.trim())];
 }
 
+type MarkdownEditorProps = {
+  workspaceId?: string;
+  documentId?: string;
+  initialTitle?: string;
+  initialMarkdown?: string;
+};
+
 function getBlockClass(type: BlockType) {
   const shared =
     "min-h-8 w-full min-w-0 whitespace-pre-wrap break-words rounded-md px-1 py-1 outline-none transition-colors [overflow-wrap:anywhere]";
@@ -257,20 +266,43 @@ function labelFor(type: BlockType) {
   return "Text";
 }
 
-export default function MarkdownEditor() {
-  const [blocks, setBlocks] = useState<EditorBlock[]>(starterBlocks);
+export default function MarkdownEditor({
+  workspaceId,
+  documentId,
+  initialTitle = "untitled",
+  initialMarkdown = "",
+}: MarkdownEditorProps) {
+  const initialBlocks = useMemo(
+    () => (initialMarkdown ? markdownToEditorBlocks(initialMarkdown) : starterBlocks),
+    [initialMarkdown],
+  );
+  const [blocks, setBlocks] = useState<EditorBlock[]>(initialBlocks);
+  const [savedDocumentId, setSavedDocumentId] = useState(documentId);
+  const [title, setTitle] = useState(initialTitle || "untitled");
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">(
+    documentId ? "saved" : "idle",
+  );
+  const [saveError, setSaveError] = useState("");
+  const [lastSavedMarkdown, setLastSavedMarkdown] = useState(initialMarkdown);
+  const [lastSavedTitle, setLastSavedTitle] = useState(initialTitle || "untitled");
   const [focusId, setFocusId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [commandBlockId, setCommandBlockId] = useState<string | null>(null);
   const [commandQuery, setCommandQuery] = useState("");
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
-  const [currentBlockId, setCurrentBlockId] = useState(starterBlocks[0].id);
+  const [currentBlockId, setCurrentBlockId] = useState(initialBlocks[0].id);
   const refs = useRef<Record<string, HTMLDivElement | null>>({});
   const editorRootRef = useRef<HTMLDivElement | null>(null);
   const commandInputRef = useRef<HTMLInputElement | null>(null);
   const storageLoaded = useRef(false);
+  const savingRef = useRef(false);
 
   useEffect(() => {
+    if (workspaceId || documentId || initialMarkdown) {
+      storageLoaded.current = true;
+      return;
+    }
+
     const timeoutId = window.setTimeout(() => {
       const saved = window.localStorage.getItem(storageKey);
 
@@ -289,13 +321,14 @@ export default function MarkdownEditor() {
     }, 0);
 
     return () => window.clearTimeout(timeoutId);
-  }, []);
+  }, [documentId, initialMarkdown, workspaceId]);
 
   useEffect(() => {
+    if (workspaceId || documentId) return;
     if (!storageLoaded.current) return;
 
     window.localStorage.setItem(storageKey, JSON.stringify(blocks));
-  }, [blocks]);
+  }, [blocks, documentId, workspaceId]);
 
   useEffect(() => {
     if (!focusId) return;
@@ -320,6 +353,9 @@ export default function MarkdownEditor() {
   }, [commandBlockId]);
 
   const markdown = useMemo(() => blocksToMarkdown(blocks), [blocks]);
+  const hasRemoteSave = Boolean(workspaceId || savedDocumentId);
+  const hasUnsavedChanges =
+    markdown !== lastSavedMarkdown || title.trim() !== lastSavedTitle;
   const words = markdown.trim() ? markdown.trim().split(/\s+/).length : 0;
   const readingTime = Math.max(1, Math.ceil(words / 180));
   const filteredCommands = commands.filter((command) => {
@@ -735,6 +771,79 @@ export default function MarkdownEditor() {
     window.setTimeout(() => setCopied(false), 1200);
   }
 
+  const saveDocument = useCallback(async (source: "manual" | "auto" = "manual") => {
+    if (!hasRemoteSave) {
+      if (source === "manual") {
+        setSaveStatus("error");
+        setSaveError("Open the editor from a workspace to save documents.");
+      }
+      return;
+    }
+
+    if (savingRef.current) return;
+    if (source === "auto" && !hasUnsavedChanges) return;
+
+    savingRef.current = true;
+    setSaveStatus("saving");
+    setSaveError("");
+
+    const endpoint = savedDocumentId
+      ? `/api/documents/${savedDocumentId}`
+      : "/api/documents";
+    const method = savedDocumentId ? "PATCH" : "POST";
+
+    try {
+      const response = await fetch(endpoint, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          workspaceId,
+          markdown,
+          title: title.trim() || "untitled",
+          folderPath: "/",
+        }),
+      });
+      const result = (await response.json()) as {
+        document?: { id: string };
+        error?: string;
+      };
+
+      if (!response.ok || !result.document) {
+        throw new Error(result.error ?? "Unable to save document.");
+      }
+
+      if (!savedDocumentId) {
+        setSavedDocumentId(result.document.id);
+        const url = new URL(window.location.href);
+        url.searchParams.set("docId", result.document.id);
+        window.history.replaceState(null, "", url);
+      }
+
+      setLastSavedMarkdown(markdown);
+      setLastSavedTitle(title.trim() || "untitled");
+      setSaveStatus("saved");
+    } catch (error) {
+      setSaveStatus("error");
+      setSaveError(
+        error instanceof Error ? error.message : "Unable to save document.",
+      );
+    } finally {
+      savingRef.current = false;
+    }
+  }, [hasRemoteSave, hasUnsavedChanges, markdown, savedDocumentId, title, workspaceId]);
+
+  useEffect(() => {
+    if (!hasRemoteSave || !hasUnsavedChanges) return;
+
+    const timeoutId = window.setTimeout(() => {
+      void saveDocument("auto");
+    }, autosaveDelayMs);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [hasRemoteSave, hasUnsavedChanges, saveDocument]);
+
   return (
     <main className="min-h-screen bg-zinc-50 text-zinc-950">
       <div className="sticky top-0 z-20 border-b border-zinc-100 bg-white/90 backdrop-blur">
@@ -743,9 +852,18 @@ export default function MarkdownEditor() {
             <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">
               Studio Hub Editor
             </p>
-            <h1 className="text-xl font-semibold tracking-tight">
-              Markdown page writer
-            </h1>
+            <input
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              onBlur={() => {
+                if (!title.trim()) {
+                  setTitle("untitled");
+                }
+              }}
+              aria-label="Document title"
+              className="mt-1 w-full max-w-xl bg-transparent text-xl font-semibold tracking-tight text-zinc-950 outline-none placeholder:text-zinc-300"
+              placeholder="untitled"
+            />
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -755,15 +873,39 @@ export default function MarkdownEditor() {
             <span className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-zinc-600">
               {readingTime} min read
             </span>
+            {hasRemoteSave ? (
+              <span className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-zinc-500">
+                {saveStatus === "saving"
+                  ? "Saving..."
+                  : saveStatus === "saved" && !hasUnsavedChanges
+                    ? "Saved"
+                    : saveStatus === "error"
+                      ? "Save failed"
+                      : "Unsaved"}
+              </span>
+            ) : null}
             <button
               type="button"
               onClick={copyMarkdown}
-              className="rounded-md bg-zinc-950 px-3 py-2 font-medium text-white transition-colors hover:bg-zinc-800"
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 font-medium text-zinc-700 transition-colors hover:border-zinc-300 hover:text-zinc-950"
             >
               {copied ? "Copied" : "Copy MD"}
             </button>
+            <button
+              type="button"
+              onClick={() => void saveDocument("manual")}
+              disabled={saveStatus === "saving"}
+              className="rounded-md bg-zinc-950 px-4 py-2 font-medium text-white transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Save
+            </button>
           </div>
         </div>
+        {saveError ? (
+          <div className="border-t border-red-100 bg-red-50 px-5 py-2 text-sm text-red-700 md:px-8">
+            {saveError}
+          </div>
+        ) : null}
       </div>
 
       <section className="w-full px-4 py-10 md:px-12 lg:px-20">
