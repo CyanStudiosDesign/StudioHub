@@ -74,6 +74,13 @@ export async function updateMemberPermissions(formData: FormData) {
       can_view_projects: isAdmin || checked(formData, "can_view_projects"),
       can_manage_projects: isAdmin || checked(formData, "can_manage_projects"),
       can_manage_members: isAdmin || checked(formData, "can_manage_members"),
+      can_view_creatives: isAdmin || checked(formData, "can_view_creatives"),
+      can_manage_creatives:
+        isAdmin || checked(formData, "can_manage_creatives"),
+      can_upload_creatives:
+        isAdmin || checked(formData, "can_upload_creatives"),
+      can_approve_creatives:
+        isAdmin || checked(formData, "can_approve_creatives"),
     });
 
   if (permissionsError) {

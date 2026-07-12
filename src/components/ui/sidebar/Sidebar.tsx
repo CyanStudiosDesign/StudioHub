@@ -8,6 +8,7 @@ import {
   FileText,
   Home,
   LogOut,
+  Megaphone,
   PanelLeft,
   Kanban,
   Users,
@@ -35,6 +36,7 @@ export default function Sidebar({ workspaceId, logoutAction }: SidebarProps) {
     { href: "/documents", label: "Documents", icon: FileText },
     { href: "/workspaces", label: "Workspaces", icon: Users },
     { href: projectsHref, label: "Projects", icon: Kanban },
+    { href: "/creatives", label: "Creatives", icon: Megaphone },
     { href: createDocumentHref, label: "Create document", icon: FilePlus },
   ];
 

@@ -16,6 +16,10 @@ type PermissionRow = {
   can_view_projects: boolean;
   can_manage_projects: boolean;
   can_manage_members: boolean;
+  can_view_creatives: boolean;
+  can_manage_creatives: boolean;
+  can_upload_creatives: boolean;
+  can_approve_creatives: boolean;
 };
 
 function Toggle({
@@ -112,7 +116,7 @@ export default async function WorkspaceSettingsPage({
   const { data: permissions, error: permissionsError } = await supabase
     .from("workspace_member_permissions")
     .select(
-      "workspace_id, user_id, can_view_documents, can_manage_documents, can_view_projects, can_manage_projects, can_manage_members",
+      "workspace_id, user_id, can_view_documents, can_manage_documents, can_view_projects, can_manage_projects, can_manage_members, can_view_creatives, can_manage_creatives, can_upload_creatives, can_approve_creatives",
     )
     .eq("workspace_id", workspace.id);
 
@@ -240,6 +244,41 @@ export default async function WorkspaceSettingsPage({
                           label="Manage members"
                           defaultChecked={
                             isAdmin || (permission?.can_manage_members ?? false)
+                          }
+                          disabled={isAdmin}
+                        />
+                        <Toggle
+                          name="can_view_creatives"
+                          label="View creatives"
+                          defaultChecked={
+                            isAdmin || (permission?.can_view_creatives ?? true)
+                          }
+                          disabled={isAdmin}
+                        />
+                        <Toggle
+                          name="can_manage_creatives"
+                          label="Manage campaigns"
+                          defaultChecked={
+                            isAdmin ||
+                            (permission?.can_manage_creatives ?? false)
+                          }
+                          disabled={isAdmin}
+                        />
+                        <Toggle
+                          name="can_upload_creatives"
+                          label="Upload creative versions"
+                          defaultChecked={
+                            isAdmin ||
+                            (permission?.can_upload_creatives ?? false)
+                          }
+                          disabled={isAdmin}
+                        />
+                        <Toggle
+                          name="can_approve_creatives"
+                          label="Approve creatives"
+                          defaultChecked={
+                            isAdmin ||
+                            (permission?.can_approve_creatives ?? false)
                           }
                           disabled={isAdmin}
                         />
