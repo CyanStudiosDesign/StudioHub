@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { CheckCircle2, FileText } from "lucide-react";
+import { ArrowLeft, CheckCircle2, FileText, Trash2 } from "lucide-react";
 import AppShell from "@/components/ui/sidebar/AppShell";
 import { createClient } from "@/utils/supabase/server";
 import type { CreativeVersion, Profile } from "@/types/supabase";
 import {
   approveCreativeVersion,
   assignCreativePost,
+  deleteCreativePost,
   removeCreativeAssignee,
   updateCreativeStatus,
 } from "../../actions";
@@ -232,9 +233,10 @@ export default async function CreativeDetailPage({
             <div>
               <Link
                 href={`/creatives/${post.campaign_id}`}
-                className="text-sm font-medium text-zinc-500 hover:text-zinc-950"
+                aria-label="Back"
+                className="inline-flex size-10 items-center justify-center rounded-xl border border-zinc-200 text-zinc-500 transition hover:border-zinc-300 hover:text-zinc-950"
               >
-                Back to {campaign.title}
+                <ArrowLeft className="size-4" />
               </Link>
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <h1 className="text-3xl font-semibold tracking-tight">
@@ -248,7 +250,21 @@ export default async function CreativeDetailPage({
                 </p>
               ) : null}
             </div>
-            <MemberAvatarGroup members={assigneeProfiles} />
+            <div className="flex items-center gap-3">
+              <MemberAvatarGroup members={assigneeProfiles} />
+              <form action={deleteCreativePost}>
+                <input type="hidden" name="workspaceId" value={post.workspace_id} />
+                <input type="hidden" name="campaignId" value={post.campaign_id} />
+                <input type="hidden" name="postId" value={post.id} />
+                <button
+                  type="submit"
+                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 text-sm font-semibold text-red-700 hover:bg-red-100"
+                >
+                  <Trash2 className="size-4" />
+                  Delete
+                </button>
+              </form>
+            </div>
           </div>
 
           <div className="grid gap-6 xl:grid-cols-[1fr_380px]">

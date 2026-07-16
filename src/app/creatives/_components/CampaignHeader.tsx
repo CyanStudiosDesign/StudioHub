@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import type { CreativeCampaign, Profile } from "@/types/supabase";
 import MemberAvatarGroup from "./MemberAvatarGroup";
 import StatusBadge from "./StatusBadge";
@@ -26,9 +27,10 @@ export default function CampaignHeader({
         <div>
           <Link
             href="/creatives"
-            className="text-sm font-medium text-zinc-500 hover:text-zinc-950"
+            aria-label="Back"
+            className="inline-flex size-10 items-center justify-center rounded-xl border border-zinc-200 text-zinc-500 transition hover:border-zinc-300 hover:text-zinc-950"
           >
-            Back to campaigns
+            <ArrowLeft className="size-4" />
           </Link>
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <h1 className="text-3xl font-semibold tracking-tight text-zinc-950">

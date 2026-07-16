@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { FileText, Play, Image as ImageIcon } from "lucide-react";
+import { FileText, Play, Image as ImageIcon, Trash2 } from "lucide-react";
 import type { CreativePost, CreativeVersion, Profile } from "@/types/supabase";
+import { deleteCreativePost } from "../actions";
 import MemberAvatarGroup from "./MemberAvatarGroup";
 import StatusBadge from "./StatusBadge";
 
@@ -58,19 +59,20 @@ export default function CreativeCard({
   assignees,
 }: CreativeCardProps) {
   return (
-    <Link
-      href={`/creatives/posts/${post.id}`}
-      className="group overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-md"
-    >
-      <div className="aspect-[4/3] overflow-hidden border-b border-zinc-100">
-        <Preview version={latestVersion} />
-      </div>
+    <article className="group overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-md">
+      <Link href={`/creatives/posts/${post.id}`} className="block">
+        <div className="aspect-[4/3] overflow-hidden border-b border-zinc-100">
+          <Preview version={latestVersion} />
+        </div>
+      </Link>
       <div className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h3 className="font-semibold tracking-tight text-zinc-950 group-hover:underline">
-              {post.title}
-            </h3>
+            <Link href={`/creatives/posts/${post.id}`}>
+              <h3 className="font-semibold tracking-tight text-zinc-950 hover:underline">
+                {post.title}
+              </h3>
+            </Link>
             <p className="mt-1 text-xs text-zinc-500">
               {latestVersion
                 ? `Version ${latestVersion.version_number}`
@@ -90,10 +92,24 @@ export default function CreativeCard({
           <MemberAvatarGroup members={assignees} limit={3} />
         </div>
 
-        <p className="mt-4 text-xs text-zinc-400">
-          Updated {formatDate(post.updated_at)}
-        </p>
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <p className="text-xs text-zinc-400">
+            Updated {formatDate(post.updated_at)}
+          </p>
+          <form action={deleteCreativePost}>
+            <input type="hidden" name="workspaceId" value={post.workspace_id} />
+            <input type="hidden" name="campaignId" value={post.campaign_id} />
+            <input type="hidden" name="postId" value={post.id} />
+            <button
+              type="submit"
+              className="inline-flex size-9 items-center justify-center rounded-xl border border-zinc-200 text-zinc-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700"
+              aria-label={`Delete ${post.title}`}
+            >
+              <Trash2 className="size-4" />
+            </button>
+          </form>
+        </div>
       </div>
-    </Link>
+    </article>
   );
 }

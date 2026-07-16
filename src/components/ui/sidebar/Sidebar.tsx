@@ -24,6 +24,28 @@ type SidebarProps = {
 const baseLinkClass =
   "flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors";
 
+function isNavItemActive(
+  pathname: string,
+  item: { href: string; label: string },
+) {
+  const href = item.href.split("?")[0];
+
+  if (href === "/") return pathname === "/";
+  if (item.label === "Projects") {
+    return pathname === href || pathname.startsWith("/projects/");
+  }
+  if (item.label === "Workspaces") {
+    return (
+      pathname === "/workspaces" ||
+      /^\/workspaces\/[^/]+$/.test(pathname) ||
+      pathname === "/workspaces/new" ||
+      /^\/workspaces\/[^/]+\/settings$/.test(pathname)
+    );
+  }
+
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 export default function Sidebar({ workspaceId, logoutAction }: SidebarProps) {
   const { collapsed, toggleSidebar } = useSidebar();
   const pathname = usePathname();
@@ -35,7 +57,7 @@ export default function Sidebar({ workspaceId, logoutAction }: SidebarProps) {
     { href: "/", label: "Home", icon: Home },
     { href: "/documents", label: "Documents", icon: FileText },
     { href: "/workspaces", label: "Workspaces", icon: Users },
-    { href: projectsHref, label: "Projects", icon: Kanban },
+    // { href: projectsHref, label: "Projects", icon: Kanban },
     { href: "/creatives", label: "Creatives", icon: Megaphone },
     { href: createDocumentHref, label: "Create document", icon: FilePlus },
   ];
@@ -68,10 +90,7 @@ export default function Sidebar({ workspaceId, logoutAction }: SidebarProps) {
       <nav className="flex-1 space-y-1 px-3 py-4">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive =
-            item.href === "/"
-              ? pathname === "/"
-              : pathname.startsWith(item.href.split("?")[0]);
+          const isActive = isNavItemActive(pathname, item);
 
           return (
             <Link

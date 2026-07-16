@@ -6,11 +6,20 @@ import { createClient } from "@/utils/supabase/action";
 import type { Database } from "@/types/supabase";
 
 type CreativePostStatus = Database["public"]["Enums"]["creative_post_status"];
+type CreativeMediaType = Database["public"]["Enums"]["creative_media_type"];
 
 const approvalStatuses = new Set<CreativePostStatus>([
   "selected",
   "rejected",
   "published",
+]);
+const allowedCreativeMimeTypes = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "video/mp4",
+  "video/quicktime",
+  "application/pdf",
 ]);
 
 async function requireUser() {
@@ -50,6 +59,27 @@ async function assertWorkspacePermission(
   }
 
   return { supabase, userId };
+}
+
+function cleanFileName(fileName: string) {
+  return fileName.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-");
+}
+
+function mediaTypeFromMime(mimeType: string | undefined): CreativeMediaType {
+  if (!mimeType) return "other";
+  if (mimeType.startsWith("image/")) return "image";
+  if (mimeType.startsWith("video/")) return "video";
+  if (mimeType === "application/pdf") return "pdf";
+  return "other";
+}
+
+function getOptionalCreativeFile(formData: FormData) {
+  const file = formData.get("asset");
+  if (!(file instanceof File) || file.size === 0) return null;
+  if (!allowedCreativeMimeTypes.has(file.type)) {
+    throw new Error("Unsupported file type. Use PNG, JPG, WEBP, MP4, MOV, or PDF.");
+  }
+  return file;
 }
 
 export async function createCampaign(formData: FormData) {
@@ -134,6 +164,8 @@ export async function createCreativePost(formData: FormData) {
   const title = String(formData.get("title") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
   const ownerId = String(formData.get("ownerId") ?? "") || null;
+  const versionNotes = String(formData.get("versionNotes") ?? "").trim();
+  const asset = getOptionalCreativeFile(formData);
 
   if (!workspaceId || !campaignId || title.length < 2) {
     throw new Error("Campaign and creative title are required.");
@@ -143,6 +175,25 @@ export async function createCreativePost(formData: FormData) {
     workspaceId,
     "creatives.manage",
   );
+
+  if (asset) {
+    const { data: canUpload, error: uploadPermissionError } = await supabase.rpc(
+      "has_workspace_permission",
+      {
+        p_workspace_id: workspaceId,
+        p_permission: "creatives.upload",
+        p_user_id: userId,
+      },
+    );
+
+    if (uploadPermissionError) {
+      throw new Error(uploadPermissionError.message);
+    }
+
+    if (!canUpload) {
+      throw new Error("You do not have permission to upload creative versions.");
+    }
+  }
 
   const { data: post, error } = await supabase
     .from("creative_posts")
@@ -170,7 +221,140 @@ export async function createCreativePost(formData: FormData) {
     message: `Created creative "${title}".`,
   });
 
+  if (asset) {
+    const storagePath = `${workspaceId}/${post.id}/${crypto.randomUUID()}-${cleanFileName(
+      asset.name,
+    )}`;
+    const { error: uploadError } = await supabase.storage
+      .from("creative-assets")
+      .upload(storagePath, asset, {
+        cacheControl: "3600",
+        upsert: false,
+        contentType: asset.type,
+      });
+
+    if (uploadError) {
+      throw new Error(uploadError.message);
+    }
+
+    const { data: publicUrl } = supabase.storage
+      .from("creative-assets")
+      .getPublicUrl(storagePath);
+    const { data: version, error: versionError } = await supabase
+      .from("creative_versions")
+      .insert({
+        post_id: post.id,
+        workspace_id: workspaceId,
+        version_number: 0,
+        uploaded_by: userId,
+        storage_path: storagePath,
+        preview_url: publicUrl.publicUrl,
+        file_name: asset.name,
+        file_size: asset.size,
+        mime_type: asset.type,
+        media_type: mediaTypeFromMime(asset.type),
+        notes: versionNotes || null,
+      })
+      .select("id, version_number")
+      .single();
+
+    if (versionError) {
+      throw new Error(versionError.message);
+    }
+
+    const { error: postUpdateError } = await supabase
+      .from("creative_posts")
+      .update({ current_version_id: version.id, current_status: "draft" })
+      .eq("id", post.id)
+      .eq("workspace_id", workspaceId);
+
+    if (postUpdateError) {
+      throw new Error(postUpdateError.message);
+    }
+
+    await supabase.from("creative_activity").insert({
+      workspace_id: workspaceId,
+      campaign_id: campaignId,
+      post_id: post.id,
+      version_id: version.id,
+      actor_id: userId,
+      type: "version_uploaded",
+      message: `Uploaded version ${version.version_number} for "${title}".`,
+    });
+  }
+
   revalidatePath(`/creatives/${campaignId}`);
+}
+
+export async function deleteCreativePost(formData: FormData) {
+  const workspaceId = String(formData.get("workspaceId") ?? "");
+  const campaignId = String(formData.get("campaignId") ?? "");
+  const postId = String(formData.get("postId") ?? "");
+
+  if (!workspaceId || !campaignId || !postId) {
+    throw new Error("Creative is required.");
+  }
+
+  const { supabase, userId } = await assertWorkspacePermission(
+    workspaceId,
+    "creatives.manage",
+  );
+
+  const { data: post, error: postError } = await supabase
+    .from("creative_posts")
+    .select("id, title")
+    .eq("id", postId)
+    .eq("workspace_id", workspaceId)
+    .eq("campaign_id", campaignId)
+    .maybeSingle();
+
+  if (postError) {
+    throw new Error(postError.message);
+  }
+
+  if (!post) {
+    throw new Error("Creative not found.");
+  }
+
+  const { data: versions, error: versionsError } = await supabase
+    .from("creative_versions")
+    .select("storage_path")
+    .eq("post_id", postId)
+    .eq("workspace_id", workspaceId);
+
+  if (versionsError) {
+    throw new Error(versionsError.message);
+  }
+
+  const storagePaths = versions
+    .map((version) => version.storage_path)
+    .filter(Boolean);
+  if (storagePaths.length) {
+    await supabase.storage.from("creative-assets").remove(storagePaths);
+  }
+
+  const { error: deleteError } = await supabase
+    .from("creative_posts")
+    .delete()
+    .eq("id", postId)
+    .eq("workspace_id", workspaceId)
+    .eq("campaign_id", campaignId);
+
+  if (deleteError) {
+    throw new Error(deleteError.message);
+  }
+
+  await supabase.from("creative_activity").insert({
+    workspace_id: workspaceId,
+    campaign_id: campaignId,
+    actor_id: userId,
+    type: "status_changed",
+    message: `Deleted creative "${post.title}".`,
+  });
+
+  revalidatePath(`/creatives/${campaignId}`);
+  revalidatePath(`/creatives/posts/${postId}`);
+  redirect(`/creatives/${campaignId}`);
 }
 
 export async function updateCreativeStatus(formData: FormData) {

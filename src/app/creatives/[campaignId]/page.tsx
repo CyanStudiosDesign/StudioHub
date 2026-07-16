@@ -309,6 +309,26 @@ export default async function CampaignPage({
                       );
                     })}
                   </select>
+                  <label className="block rounded-2xl border border-dashed border-zinc-300 bg-zinc-50 px-4 py-5 text-sm transition hover:border-zinc-400 hover:bg-white">
+                    <span className="font-semibold text-zinc-950">
+                      Upload initial creative
+                    </span>
+                    <span className="mt-1 block text-xs text-zinc-500">
+                      Optional. PNG, JPG, WEBP, MP4, MOV, or PDF. This becomes
+                      version 1.
+                    </span>
+                    <input
+                      name="asset"
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,video/mp4,video/quicktime,application/pdf"
+                      className="mt-3 block w-full text-sm text-zinc-600 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-950 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white"
+                    />
+                  </label>
+                  <textarea
+                    name="versionNotes"
+                    placeholder="Initial version notes"
+                    className="min-h-20 w-full resize-none rounded-xl border border-zinc-200 px-3 py-3 text-sm outline-none focus:border-zinc-950"
+                  />
                   <button className="h-11 w-full rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white hover:bg-zinc-800">
                     Create post
                   </button>

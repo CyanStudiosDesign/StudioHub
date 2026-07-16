@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { ArrowLeft, LayoutDashboard } from "lucide-react";
 import AppShell from "@/components/ui/sidebar/AppShell";
 import { createClient } from "@/utils/supabase/server";
 import {
@@ -122,9 +123,10 @@ export default async function WorkspaceProjectsPage({
             <div>
               <Link
                 href={`/workspaces/${workspace.id}`}
-                className="text-sm font-medium text-zinc-500 transition-colors hover:text-zinc-950"
+                aria-label="Back"
+                className="inline-flex size-10 items-center justify-center rounded-xl border border-zinc-200 text-zinc-500 transition hover:border-zinc-300 hover:text-zinc-950"
               >
-                Back to workspace
+                <ArrowLeft className="size-4" />
               </Link>
               <div className="mt-5 flex items-center gap-4">
                 <div className="flex size-12 items-center justify-center rounded-xl bg-zinc-950 text-lg font-semibold text-white">
@@ -219,6 +221,13 @@ export default async function WorkspaceProjectsPage({
                         <p className="mt-3 text-sm text-zinc-500">
                           Created by {displayName(profileMap.get(project.created_by))}
                         </p>
+                        <Link
+                          href={`/projects/${project.id}`}
+                          className="mt-4 inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-zinc-200 px-4 text-sm font-semibold text-zinc-700 hover:border-zinc-300 hover:text-zinc-950"
+                        >
+                          <LayoutDashboard className="size-4" />
+                          Open dashboard
+                        </Link>
                       </div>
 
                       <form

@@ -520,19 +520,25 @@ export type Database = {
           project_id: string;
           user_id: string;
           assigned_by: string | null;
+          role: string;
           created_at: string;
+          updated_at: string;
         };
         Insert: {
           project_id: string;
           user_id: string;
           assigned_by?: string | null;
+          role?: string;
           created_at?: string;
+          updated_at?: string;
         };
         Update: {
           project_id?: string;
           user_id?: string;
           assigned_by?: string | null;
+          role?: string;
           created_at?: string;
+          updated_at?: string;
         };
         Relationships: [
           {
@@ -562,6 +568,8 @@ export type Database = {
           created_by: string;
           name: string;
           description: string | null;
+          client_name: string | null;
+          estimated_deadline: string | null;
           status: Database["public"]["Enums"]["project_status"];
           created_at: string;
           updated_at: string | null;
@@ -572,6 +580,8 @@ export type Database = {
           created_by: string;
           name: string;
           description?: string | null;
+          client_name?: string | null;
+          estimated_deadline?: string | null;
           status?: Database["public"]["Enums"]["project_status"];
           created_at?: string;
           updated_at?: string | null;
@@ -582,6 +592,8 @@ export type Database = {
           created_by?: string;
           name?: string;
           description?: string | null;
+          client_name?: string | null;
+          estimated_deadline?: string | null;
           status?: Database["public"]["Enums"]["project_status"];
           created_at?: string;
           updated_at?: string | null;
@@ -600,6 +612,333 @@ export type Database = {
             referencedColumns: ["id"];
           },
         ];
+      };
+      project_activity: {
+        Row: {
+          id: string;
+          project_id: string;
+          task_id: string | null;
+          goal_id: string | null;
+          actor_id: string | null;
+          type: Database["public"]["Enums"]["project_activity_type"];
+          message: string;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          project_id: string;
+          task_id?: string | null;
+          goal_id?: string | null;
+          actor_id?: string | null;
+          type: Database["public"]["Enums"]["project_activity_type"];
+          message: string;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          project_id?: string;
+          task_id?: string | null;
+          goal_id?: string | null;
+          actor_id?: string | null;
+          type?: Database["public"]["Enums"]["project_activity_type"];
+          message?: string;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      project_attachments: {
+        Row: {
+          id: string;
+          project_id: string;
+          task_id: string | null;
+          uploaded_by: string;
+          storage_path: string;
+          preview_url: string | null;
+          file_name: string;
+          file_size: number | null;
+          mime_type: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          project_id: string;
+          task_id?: string | null;
+          uploaded_by: string;
+          storage_path: string;
+          preview_url?: string | null;
+          file_name: string;
+          file_size?: number | null;
+          mime_type?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          project_id?: string;
+          task_id?: string | null;
+          uploaded_by?: string;
+          storage_path?: string;
+          preview_url?: string | null;
+          file_name?: string;
+          file_size?: number | null;
+          mime_type?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      project_comments: {
+        Row: {
+          id: string;
+          project_id: string;
+          task_id: string | null;
+          author_id: string;
+          message: string;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          project_id: string;
+          task_id?: string | null;
+          author_id: string;
+          message: string;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          project_id?: string;
+          task_id?: string | null;
+          author_id?: string;
+          message?: string;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      project_financial_entries: {
+        Row: {
+          id: string;
+          project_id: string;
+          workspace_id: string;
+          title: string;
+          category: string;
+          amount: number;
+          is_revenue: boolean;
+          notes: string | null;
+          created_by: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          project_id: string;
+          workspace_id: string;
+          title: string;
+          category: string;
+          amount: number;
+          is_revenue?: boolean;
+          notes?: string | null;
+          created_by: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          project_id?: string;
+          workspace_id?: string;
+          title?: string;
+          category?: string;
+          amount?: number;
+          is_revenue?: boolean;
+          notes?: string | null;
+          created_by?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      project_goals: {
+        Row: {
+          id: string;
+          project_id: string;
+          workspace_id: string;
+          name: string;
+          description: string | null;
+          deadline: string | null;
+          created_by: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          project_id: string;
+          workspace_id: string;
+          name: string;
+          description?: string | null;
+          deadline?: string | null;
+          created_by: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          project_id?: string;
+          workspace_id?: string;
+          name?: string;
+          description?: string | null;
+          deadline?: string | null;
+          created_by?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      project_subtasks: {
+        Row: {
+          id: string;
+          task_id: string;
+          title: string;
+          is_completed: boolean;
+          completed_by: string | null;
+          completed_at: string | null;
+          created_by: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          task_id: string;
+          title: string;
+          is_completed?: boolean;
+          completed_by?: string | null;
+          completed_at?: string | null;
+          created_by: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          task_id?: string;
+          title?: string;
+          is_completed?: boolean;
+          completed_by?: string | null;
+          completed_at?: string | null;
+          created_by?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      project_task_assignees: {
+        Row: {
+          task_id: string;
+          user_id: string;
+          assigned_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          task_id: string;
+          user_id: string;
+          assigned_by?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          task_id?: string;
+          user_id?: string;
+          assigned_by?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      project_task_dependencies: {
+        Row: {
+          task_id: string;
+          depends_on_task_id: string;
+          created_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          task_id: string;
+          depends_on_task_id: string;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          task_id?: string;
+          depends_on_task_id?: string;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      project_tasks: {
+        Row: {
+          id: string;
+          project_id: string;
+          workspace_id: string;
+          goal_id: string | null;
+          parent_task_id: string | null;
+          title: string;
+          description: string | null;
+          status: Database["public"]["Enums"]["project_task_status"];
+          priority: Database["public"]["Enums"]["project_task_priority"];
+          reporter_id: string | null;
+          created_by: string;
+          start_date: string | null;
+          due_date: string | null;
+          estimated_hours: number | null;
+          actual_hours: number | null;
+          labels: string[];
+          block_completion_on_dependencies: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          project_id: string;
+          workspace_id: string;
+          goal_id?: string | null;
+          parent_task_id?: string | null;
+          title: string;
+          description?: string | null;
+          status?: Database["public"]["Enums"]["project_task_status"];
+          priority?: Database["public"]["Enums"]["project_task_priority"];
+          reporter_id?: string | null;
+          created_by: string;
+          start_date?: string | null;
+          due_date?: string | null;
+          estimated_hours?: number | null;
+          actual_hours?: number | null;
+          labels?: string[];
+          block_completion_on_dependencies?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          project_id?: string;
+          workspace_id?: string;
+          goal_id?: string | null;
+          parent_task_id?: string | null;
+          title?: string;
+          description?: string | null;
+          status?: Database["public"]["Enums"]["project_task_status"];
+          priority?: Database["public"]["Enums"]["project_task_priority"];
+          reporter_id?: string | null;
+          created_by?: string;
+          start_date?: string | null;
+          due_date?: string | null;
+          estimated_hours?: number | null;
+          actual_hours?: number | null;
+          labels?: string[];
+          block_completion_on_dependencies?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
       };
       workspace_members: {
         Row: {
@@ -792,6 +1131,20 @@ export type Database = {
         };
         Returns: boolean;
       };
+      can_manage_project: {
+        Args: {
+          p_project_id: string;
+          p_user_id?: string;
+        };
+        Returns: boolean;
+      };
+      can_view_project_financials: {
+        Args: {
+          p_project_id: string;
+          p_user_id?: string;
+        };
+        Returns: boolean;
+      };
       is_project_workspace_member: {
         Args: {
           p_project_id: string;
@@ -843,6 +1196,28 @@ export type Database = {
         | "published"
         | "archived";
       project_status: "active" | "completed" | "archived";
+      project_activity_type:
+        | "project_updated"
+        | "goal_created"
+        | "goal_completed"
+        | "task_created"
+        | "task_updated"
+        | "status_changed"
+        | "member_assigned"
+        | "deadline_changed"
+        | "comment_added"
+        | "attachment_uploaded"
+        | "subtask_completed"
+        | "financial_entry_added";
+      project_task_priority: "low" | "medium" | "high" | "critical";
+      project_task_status:
+        | "backlog"
+        | "todo"
+        | "in_progress"
+        | "blocked"
+        | "in_review"
+        | "completed"
+        | "cancelled";
       workspace_role: "owner" | "admin" | "member";
     };
     CompositeTypes: Record<string, never>;
@@ -862,8 +1237,26 @@ export type CreativeVersion =
   Database["public"]["Tables"]["creative_versions"]["Row"];
 export type Document = Database["public"]["Tables"]["documents"]["Row"];
 export type Project = Database["public"]["Tables"]["projects"]["Row"];
+export type ProjectActivity =
+  Database["public"]["Tables"]["project_activity"]["Row"];
+export type ProjectAttachment =
+  Database["public"]["Tables"]["project_attachments"]["Row"];
+export type ProjectComment =
+  Database["public"]["Tables"]["project_comments"]["Row"];
+export type ProjectFinancialEntry =
+  Database["public"]["Tables"]["project_financial_entries"]["Row"];
+export type ProjectGoal =
+  Database["public"]["Tables"]["project_goals"]["Row"];
 export type ProjectMember =
   Database["public"]["Tables"]["project_members"]["Row"];
+export type ProjectSubtask =
+  Database["public"]["Tables"]["project_subtasks"]["Row"];
+export type ProjectTask =
+  Database["public"]["Tables"]["project_tasks"]["Row"];
+export type ProjectTaskAssignee =
+  Database["public"]["Tables"]["project_task_assignees"]["Row"];
+export type ProjectTaskDependency =
+  Database["public"]["Tables"]["project_task_dependencies"]["Row"];
 export type Workspace = Database["public"]["Tables"]["workspaces"]["Row"];
 export type WorkspaceMember =
   Database["public"]["Tables"]["workspace_members"]["Row"];
