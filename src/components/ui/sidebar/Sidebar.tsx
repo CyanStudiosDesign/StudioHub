@@ -4,13 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BookOpen,
+  Bell,
   FilePlus,
   FileText,
   Home,
   LogOut,
   Megaphone,
   PanelLeft,
-  Kanban,
   Users,
 } from "lucide-react";
 import { useSidebar } from "@/components/ui/provider/SidebarProvider";
@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 
 type SidebarProps = {
   workspaceId?: string;
+  hasUnreadAnnouncements?: boolean;
   logoutAction: () => void | Promise<void>;
 };
 
@@ -46,18 +47,26 @@ function isNavItemActive(
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export default function Sidebar({ workspaceId, logoutAction }: SidebarProps) {
+export default function Sidebar({
+  workspaceId,
+  hasUnreadAnnouncements,
+  logoutAction,
+}: SidebarProps) {
   const { collapsed, toggleSidebar } = useSidebar();
   const pathname = usePathname();
   const createDocumentHref = workspaceId
     ? `/editor?workspaceId=${workspaceId}`
     : "/editor";
-  const projectsHref = workspaceId ? `/workspaces/${workspaceId}/projects` : "/workspaces";
   const navItems = [
     { href: "/", label: "Home", icon: Home },
     { href: "/documents", label: "Documents", icon: FileText },
     { href: "/workspaces", label: "Workspaces", icon: Users },
-    // { href: projectsHref, label: "Projects", icon: Kanban },
+    {
+      href: "/announcements",
+      label: "Announcements",
+      icon: Bell,
+      hasDot: hasUnreadAnnouncements,
+    },
     { href: "/creatives", label: "Creatives", icon: Megaphone },
     { href: createDocumentHref, label: "Create document", icon: FilePlus },
   ];
@@ -105,7 +114,12 @@ export default function Sidebar({ workspaceId, logoutAction }: SidebarProps) {
                 collapsed && "justify-center px-0",
               )}
             >
-              <Icon className="size-5 shrink-0" />
+              <span className="relative shrink-0">
+                <Icon className="size-5" />
+                {item.hasDot ? (
+                  <span className="absolute -right-1 -top-1 size-2.5 rounded-full bg-red-500 ring-2 ring-white" />
+                ) : null}
+              </span>
               {!collapsed ? <span>{item.label}</span> : null}
             </Link>
           );

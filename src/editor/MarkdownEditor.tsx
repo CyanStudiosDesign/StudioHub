@@ -11,6 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { FolderOpen, Search, X } from "lucide-react";
 import { MarkdownBlock, parseMarkdown } from "@/doc/markdown-renderer";
 
 type BlockType =
@@ -27,6 +28,13 @@ type EditorBlock = {
   id: string;
   type: BlockType;
   text: string;
+};
+
+type SaveWorkspace = {
+  id: string;
+  name: string;
+  slug: string;
+  icon: string;
 };
 
 type Command = {
@@ -222,6 +230,7 @@ type MarkdownEditorProps = {
   documentId?: string;
   initialTitle?: string;
   initialMarkdown?: string;
+  availableWorkspaces?: SaveWorkspace[];
 };
 
 function getBlockClass(type: BlockType) {
@@ -271,6 +280,7 @@ export default function MarkdownEditor({
   documentId,
   initialTitle = "untitled",
   initialMarkdown = "",
+  availableWorkspaces = [],
 }: MarkdownEditorProps) {
   const initialBlocks = useMemo(
     () => (initialMarkdown ? markdownToEditorBlocks(initialMarkdown) : starterBlocks),
@@ -291,6 +301,9 @@ export default function MarkdownEditor({
   const [commandQuery, setCommandQuery] = useState("");
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const [currentBlockId, setCurrentBlockId] = useState(initialBlocks[0].id);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(workspaceId ?? "");
+  const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
+  const [workspaceSearch, setWorkspaceSearch] = useState("");
   const refs = useRef<Record<string, HTMLDivElement | null>>({});
   const editorRootRef = useRef<HTMLDivElement | null>(null);
   const commandInputRef = useRef<HTMLInputElement | null>(null);
@@ -353,7 +366,20 @@ export default function MarkdownEditor({
   }, [commandBlockId]);
 
   const markdown = useMemo(() => blocksToMarkdown(blocks), [blocks]);
-  const hasRemoteSave = Boolean(workspaceId || savedDocumentId);
+  const saveWorkspaceId = workspaceId ?? selectedWorkspaceId;
+  const selectedWorkspace = availableWorkspaces.find(
+    (workspace) => workspace.id === saveWorkspaceId,
+  );
+  const filteredWorkspaces = availableWorkspaces.filter((workspace) => {
+    const query = workspaceSearch.trim().toLowerCase();
+    if (!query) return true;
+
+    return (
+      workspace.name.toLowerCase().includes(query) ||
+      workspace.slug.toLowerCase().includes(query)
+    );
+  });
+  const hasRemoteSave = Boolean(saveWorkspaceId || savedDocumentId);
   const hasUnsavedChanges =
     markdown !== lastSavedMarkdown || title.trim() !== lastSavedTitle;
   const words = markdown.trim() ? markdown.trim().split(/\s+/).length : 0;
@@ -771,11 +797,16 @@ export default function MarkdownEditor({
     window.setTimeout(() => setCopied(false), 1200);
   }
 
-  const saveDocument = useCallback(async (source: "manual" | "auto" = "manual") => {
-    if (!hasRemoteSave) {
+  const saveDocument = useCallback(async (
+    source: "manual" | "auto" = "manual",
+    workspaceOverrideId?: string,
+  ) => {
+    const targetWorkspaceId = workspaceOverrideId ?? saveWorkspaceId;
+
+    if (!savedDocumentId && !targetWorkspaceId) {
       if (source === "manual") {
-        setSaveStatus("error");
-        setSaveError("Open the editor from a workspace to save documents.");
+        setWorkspacePickerOpen(true);
+        setSaveError("");
       }
       return;
     }
@@ -799,7 +830,7 @@ export default function MarkdownEditor({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          workspaceId,
+          workspaceId: targetWorkspaceId,
           markdown,
           title: title.trim() || "untitled",
           folderPath: "/",
@@ -816,6 +847,10 @@ export default function MarkdownEditor({
 
       if (!savedDocumentId) {
         setSavedDocumentId(result.document.id);
+        if (targetWorkspaceId) {
+          setSelectedWorkspaceId(targetWorkspaceId);
+        }
+        setWorkspacePickerOpen(false);
         const url = new URL(window.location.href);
         url.searchParams.set("docId", result.document.id);
         window.history.replaceState(null, "", url);
@@ -832,7 +867,7 @@ export default function MarkdownEditor({
     } finally {
       savingRef.current = false;
     }
-  }, [hasRemoteSave, hasUnsavedChanges, markdown, savedDocumentId, title, workspaceId]);
+  }, [hasUnsavedChanges, markdown, savedDocumentId, saveWorkspaceId, title]);
 
   useEffect(() => {
     if (!hasRemoteSave || !hasUnsavedChanges) return;
@@ -884,6 +919,15 @@ export default function MarkdownEditor({
                       : "Unsaved"}
               </span>
             ) : null}
+            {!savedDocumentId && selectedWorkspace ? (
+              <button
+                type="button"
+                onClick={() => setWorkspacePickerOpen(true)}
+                className="rounded-md border border-zinc-200 bg-white px-3 py-2 font-medium text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-950"
+              >
+                {selectedWorkspace.name}
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={copyMarkdown}
@@ -907,6 +951,122 @@ export default function MarkdownEditor({
           </div>
         ) : null}
       </div>
+
+      {workspacePickerOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/25 px-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="workspace-picker-title"
+        >
+          <div className="w-full max-w-2xl overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-[0_30px_100px_rgba(24,24,27,0.22)]">
+            <div className="flex items-start justify-between gap-4 border-b border-zinc-100 px-6 py-5">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                  Save location
+                </p>
+                <h2
+                  id="workspace-picker-title"
+                  className="mt-1 text-2xl font-semibold tracking-tight text-zinc-950"
+                >
+                  Choose a workspace
+                </h2>
+                <p className="mt-1 text-sm text-zinc-500">
+                  Pick where this Markdown document should live.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWorkspacePickerOpen(false)}
+                className="flex size-10 items-center justify-center rounded-full border border-zinc-200 text-zinc-500 transition-colors hover:border-zinc-300 hover:text-zinc-950"
+                aria-label="Close workspace picker"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="border-b border-zinc-100 px-6 py-4">
+              <label className="flex items-center gap-3 rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-zinc-500">
+                <Search className="size-4" />
+                <input
+                  value={workspaceSearch}
+                  onChange={(event) => setWorkspaceSearch(event.target.value)}
+                  placeholder="Search workspaces"
+                  className="w-full bg-transparent text-sm text-zinc-950 outline-none placeholder:text-zinc-400"
+                  autoFocus
+                />
+              </label>
+            </div>
+
+            <div className="max-h-[420px] overflow-auto p-3">
+              {filteredWorkspaces.length ? (
+                <div className="space-y-1">
+                  {filteredWorkspaces.map((workspace) => {
+                    const isSelected = workspace.id === saveWorkspaceId;
+
+                    return (
+                      <button
+                        key={workspace.id}
+                        type="button"
+                        onClick={() => void saveDocument("manual", workspace.id)}
+                        disabled={saveStatus === "saving"}
+                        className={`grid w-full grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-4 rounded-2xl px-4 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                          isSelected
+                            ? "bg-zinc-950 text-white"
+                            : "text-zinc-700 hover:bg-zinc-100 hover:text-zinc-950"
+                        }`}
+                      >
+                        <span
+                          className={`flex size-11 items-center justify-center rounded-xl text-lg font-semibold ${
+                            isSelected
+                              ? "bg-white text-zinc-950"
+                              : "bg-zinc-950 text-white"
+                          }`}
+                        >
+                          {workspace.icon || workspace.name.slice(0, 1)}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate font-semibold">
+                            {workspace.name}
+                          </span>
+                          <span
+                            className={`block truncate text-sm ${
+                              isSelected ? "text-zinc-300" : "text-zinc-500"
+                            }`}
+                          >
+                            {workspace.slug}
+                          </span>
+                        </span>
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                            isSelected
+                              ? "bg-white/15 text-white"
+                              : "bg-zinc-100 text-zinc-500"
+                          }`}
+                        >
+                          {saveStatus === "saving" && isSelected
+                            ? "Saving..."
+                            : "Save here"}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 px-6 py-10 text-center">
+                  <FolderOpen className="mx-auto size-10 text-zinc-300" />
+                  <p className="mt-4 font-semibold text-zinc-900">
+                    No workspaces found
+                  </p>
+                  <p className="mt-2 text-sm text-zinc-500">
+                    Create or join a workspace before saving this document.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <section className="w-full px-4 py-10 md:px-12 lg:px-20">
         <div className="mx-auto max-w-5xl">

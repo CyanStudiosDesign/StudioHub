@@ -18,15 +18,6 @@ type EditorPageProps = {
 
 export default async function EditorPage({ searchParams }: EditorPageProps) {
   const { workspaceId, docId } = await searchParams;
-
-  if (!workspaceId && !docId) {
-    return (
-      <AppShell>
-        <MarkdownEditor />
-      </AppShell>
-    );
-  }
-
   const supabase = await createClient();
   const {
     data: { user },
@@ -35,6 +26,23 @@ export default async function EditorPage({ searchParams }: EditorPageProps) {
 
   if (userError || !user) {
     redirect("/login");
+  }
+
+  const { data: workspaces, error: workspacesError } = await supabase
+    .from("workspaces")
+    .select("id, name, slug, icon")
+    .order("updated_at", { ascending: false });
+
+  if (workspacesError) {
+    throw new Error(workspacesError.message);
+  }
+
+  if (!workspaceId && !docId) {
+    return (
+      <AppShell>
+        <MarkdownEditor availableWorkspaces={workspaces ?? []} />
+      </AppShell>
+    );
   }
 
   if (docId) {
@@ -59,6 +67,7 @@ export default async function EditorPage({ searchParams }: EditorPageProps) {
           workspaceId={document.workspace_id}
           initialTitle={document.title}
           initialMarkdown={document.content_md}
+          availableWorkspaces={workspaces ?? []}
         />
       </AppShell>
     );
@@ -84,7 +93,10 @@ export default async function EditorPage({ searchParams }: EditorPageProps) {
 
   return (
     <AppShell workspaceId={workspace.id}>
-      <MarkdownEditor workspaceId={workspace.id} />
+      <MarkdownEditor
+        workspaceId={workspace.id}
+        availableWorkspaces={workspaces ?? []}
+      />
     </AppShell>
   );
 }
