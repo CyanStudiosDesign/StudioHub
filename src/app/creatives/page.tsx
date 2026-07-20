@@ -1,5 +1,10 @@
 import { redirect } from "next/navigation";
 import AppShell from "@/components/ui/sidebar/AppShell";
+import {
+  getCoreMembership,
+  getCoreWorkspace,
+  SetupErrorScreen,
+} from "@/lib/core-workspace";
 import { createClient } from "@/utils/supabase/server";
 import type { CreativePost, Profile } from "@/types/supabase";
 import { createCampaign } from "./actions";
@@ -18,20 +23,25 @@ export default async function CreativesDashboardPage() {
     redirect("/login");
   }
 
-  const { data: workspaces, error: workspacesError } = await supabase
-    .from("workspaces")
-    .select("id, name, icon")
-    .order("created_at", { ascending: false });
+  const { workspace, setupError } = await getCoreWorkspace(supabase);
 
-  if (workspacesError) {
-    throw new Error(workspacesError.message);
+  if (setupError || !workspace) {
+    return <SetupErrorScreen message={setupError ?? "Workspace missing."} />;
   }
 
-  const { data: campaigns, error: campaignsError } = await supabase
-    .from("creative_campaigns")
-    .select("id, workspace_id, title, description, status, created_by, created_at, updated_at")
-    .order("updated_at", { ascending: false })
-    .limit(60);
+  const membership = await getCoreMembership(supabase, workspace.id, user.id);
+
+  if (!membership) {
+    redirect("/");
+  }
+
+  const { data: campaigns, error: campaignsError } =
+    await supabase
+        .from("creative_campaigns")
+        .select("id, workspace_id, title, description, status, created_by, created_at, updated_at")
+        .eq("workspace_id", workspace.id)
+        .order("updated_at", { ascending: false })
+        .limit(60);
 
   if (campaignsError) {
     throw new Error(campaignsError.message);
@@ -109,7 +119,7 @@ export default async function CreativesDashboardPage() {
   }
 
   return (
-    <AppShell>
+    <AppShell workspaceId={workspace.id}>
       <main className="min-h-screen px-6 py-10 text-zinc-950">
         <div className="mx-auto max-w-7xl">
           <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
@@ -130,18 +140,10 @@ export default async function CreativesDashboardPage() {
               action={createCampaign}
               className="grid gap-3 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm sm:grid-cols-[180px_1fr_1fr_auto]"
             >
-              <select
-                name="workspaceId"
-                required
-                className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-950"
-              >
-                <option value="">Workspace</option>
-                {workspaces.map((workspace) => (
-                  <option key={workspace.id} value={workspace.id}>
-                    {workspace.icon} {workspace.name}
-                  </option>
-                ))}
-              </select>
+              <input type="hidden" name="workspaceId" value={workspace.id} />
+              <div className="flex h-11 items-center rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-sm font-medium text-zinc-600">
+                {workspace.icon} {workspace.name}
+              </div>
               <input
                 name="title"
                 required

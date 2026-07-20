@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getCoreWorkspace } from "@/lib/core-workspace";
 import { createClient } from "@/utils/supabase/action";
 import { readDocumentPayload } from "../document-utils";
 
@@ -22,6 +23,14 @@ export async function PATCH(
   }
 
   const { markdown, folderPath, title } = await readDocumentPayload(request);
+  const { workspace, setupError } = await getCoreWorkspace(supabase);
+
+  if (setupError || !workspace) {
+    return NextResponse.json(
+      { error: setupError ?? "Core workspace is not configured." },
+      { status: 500 },
+    );
+  }
 
   const { data: document, error } = await supabase
     .from("documents")
@@ -31,6 +40,7 @@ export async function PATCH(
       folder_path: folderPath,
     })
     .eq("id", id)
+    .eq("workspace_id", workspace.id)
     .select("id, title, updated_at")
     .single();
 

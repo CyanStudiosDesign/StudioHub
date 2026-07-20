@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { getCoreWorkspace } from "@/lib/core-workspace";
 import { createClient } from "@/utils/supabase/action";
 
 async function getUserId() {
@@ -32,6 +33,16 @@ export async function createProject(formData: FormData) {
   }
 
   const { supabase, userId } = await getUserId();
+  const { workspace, setupError } = await getCoreWorkspace(supabase);
+
+  if (setupError || !workspace) {
+    throw new Error(setupError ?? "Core workspace is not configured.");
+  }
+
+  if (workspaceId !== workspace.id) {
+    throw new Error("Projects can only be created in the core workspace.");
+  }
+
   const { error } = await supabase.from("projects").insert({
     workspace_id: workspaceId,
     created_by: userId,

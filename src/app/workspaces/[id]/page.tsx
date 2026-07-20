@@ -11,7 +11,19 @@ import {
   Settings,
   Users,
 } from "lucide-react";
+import {
+  addCoreWorkspaceMemberByEmail,
+  approveWorkspaceJoinRequest,
+  rejectWorkspaceJoinRequest,
+} from "@/app/workspaces/core-actions";
 import AppShell from "@/components/ui/sidebar/AppShell";
+import {
+  canManageWorkspaceMembers,
+  getCoreMembership,
+  getCoreWorkspace,
+  SetupErrorScreen,
+} from "@/lib/core-workspace";
+import { getDocumentHref } from "@/lib/document-paths";
 import { createClient } from "@/utils/supabase/server";
 
 type WorkspacePageProps = {
@@ -82,10 +94,28 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
     redirect("/login");
   }
 
+  const { workspace: coreWorkspace, setupError } =
+    await getCoreWorkspace(supabase);
+
+  if (setupError || !coreWorkspace) {
+    return <SetupErrorScreen message={setupError ?? "Workspace missing."} />;
+  }
+
+  if (id !== coreWorkspace.id) {
+    redirect(`/workspaces/${coreWorkspace.id}`);
+  }
+
+  const membership = await getCoreMembership(supabase, coreWorkspace.id, user.id);
+
+  if (!membership) {
+    redirect("/");
+  }
+
   const { data: workspace, error } = await supabase
     .from("workspaces")
     .select("id, name, slug, icon, description, created_at, updated_at")
     .eq("id", id)
+    .eq("is_deleted", false)
     .maybeSingle();
 
   if (error) {
@@ -107,6 +137,12 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
   if (adminError) {
     throw new Error(adminError.message);
   }
+
+  const canManageMembers = await canManageWorkspaceMembers(
+    supabase,
+    workspace.id,
+    user.id,
+  );
 
   const { data: members, error: membersError } = await supabase
     .from("workspace_members")
@@ -174,6 +210,19 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
     throw new Error(projectTasksError.message);
   }
 
+  const { data: joinRequests, error: joinRequestsError } = canManageMembers
+    ? await supabase
+        .from("workspace_join_requests")
+        .select("id, workspace_id, user_id, status, requested_at, reviewed_at")
+        .eq("workspace_id", workspace.id)
+        .in("status", ["pending", "rejected"])
+        .order("requested_at", { ascending: false })
+    : { data: [], error: null };
+
+  if (joinRequestsError) {
+    throw new Error(joinRequestsError.message);
+  }
+
   const creativeCampaignIds = creativeCampaigns.map((campaign) => campaign.id);
   const { data: creativePosts, error: creativePostsError } =
     creativeCampaignIds.length
@@ -190,6 +239,7 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
   const profileIds = Array.from(
     new Set([
       ...members.map((member) => member.user_id),
+      ...joinRequests.map((request) => request.user_id),
       ...projects.map((project) => project.created_by),
       ...documents.map((document) => document.author_id),
       ...announcements.map((announcement) => announcement.created_by),
@@ -222,7 +272,7 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
       id: `doc-${document.id}`,
       title: `Document updated: ${document.title}`,
       meta: `${displayName(profileMap.get(document.author_id))} · ${formatDate(document.updated_at)}`,
-      href: `/docs/${document.id}`,
+      href: getDocumentHref(document),
     })),
     ...projects.map((project) => ({
       id: `project-${project.id}`,
@@ -423,6 +473,101 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
             </div>
 
             <aside className="space-y-6">
+              {canManageMembers ? (
+                <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <h2 className="text-lg font-semibold tracking-tight">
+                        Access requests
+                      </h2>
+                      <p className="mt-1 text-sm text-zinc-500">
+                        Approve new members or review rejected requests.
+                      </p>
+                    </div>
+                    <Users className="size-5 text-zinc-400" />
+                  </div>
+
+                  <form
+                    action={addCoreWorkspaceMemberByEmail}
+                    className="mt-4 flex gap-2"
+                  >
+                    <input
+                      type="email"
+                      name="email"
+                      required
+                      placeholder="Add member by email"
+                      className="h-10 min-w-0 flex-1 rounded-xl border border-zinc-200 px-3 text-sm outline-none focus:border-zinc-950"
+                    />
+                    <button className="h-10 rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white hover:bg-zinc-800">
+                      Add
+                    </button>
+                  </form>
+
+                  <div className="mt-5 space-y-2">
+                    {joinRequests.length ? (
+                      joinRequests.map((request) => {
+                        const requestProfile = profileMap.get(request.user_id);
+                        const isRejected = request.status === "rejected";
+
+                        return (
+                          <div
+                            key={request.id}
+                            className="rounded-xl bg-zinc-50 p-3"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold text-zinc-950">
+                                  {displayName(requestProfile)}
+                                </p>
+                                <p className="mt-1 text-xs text-zinc-500">
+                                  @{requestProfile?.username ?? "unknown"} ·{" "}
+                                  {formatDate(request.requested_at)}
+                                </p>
+                              </div>
+                              <span
+                                className={
+                                  isRejected
+                                    ? "rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700"
+                                    : "rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700"
+                                }
+                              >
+                                {request.status}
+                              </span>
+                            </div>
+                            <div className="mt-3 flex gap-2">
+                              <form action={approveWorkspaceJoinRequest}>
+                                <input
+                                  type="hidden"
+                                  name="requestId"
+                                  value={request.id}
+                                />
+                                <button className="h-9 rounded-lg bg-zinc-950 px-3 text-xs font-semibold text-white hover:bg-zinc-800">
+                                  Approve
+                                </button>
+                              </form>
+                              {!isRejected ? (
+                                <form action={rejectWorkspaceJoinRequest}>
+                                  <input
+                                    type="hidden"
+                                    name="requestId"
+                                    value={request.id}
+                                  />
+                                  <button className="h-9 rounded-lg border border-zinc-200 px-3 text-xs font-semibold text-zinc-700 hover:border-red-200 hover:text-red-700">
+                                    Reject
+                                  </button>
+                                </form>
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <EmptyCard text="No pending or rejected access requests." />
+                    )}
+                  </div>
+                </section>
+              ) : null}
+
               <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
                 <div className="flex items-center justify-between gap-4">
                   <h2 className="text-lg font-semibold tracking-tight">

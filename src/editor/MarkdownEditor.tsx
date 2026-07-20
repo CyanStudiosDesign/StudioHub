@@ -11,7 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { FolderOpen, Search, X } from "lucide-react";
+import { ExternalLink, FolderOpen, Link2, Search, X } from "lucide-react";
 import { MarkdownBlock, parseMarkdown } from "@/doc/markdown-renderer";
 
 type BlockType =
@@ -20,6 +20,7 @@ type BlockType =
   | "heading3"
   | "paragraph"
   | "bullet"
+  | "link"
   | "quote"
   | "code"
   | "divider";
@@ -28,6 +29,7 @@ type EditorBlock = {
   id: string;
   type: BlockType;
   text: string;
+  href?: string;
 };
 
 type SaveWorkspace = {
@@ -78,6 +80,13 @@ const commands: Command[] = [
     group: "Basic",
   },
   {
+    type: "link",
+    label: "Link",
+    hint: "Insert a clickable URL",
+    shortcut: "[ ]( )",
+    group: "Basic",
+  },
+  {
     type: "bullet",
     label: "Bulleted list",
     hint: "Simple list item",
@@ -115,11 +124,16 @@ const starterBlocks: EditorBlock[] = [
   },
 ];
 
-function createBlock(type: BlockType = "paragraph", text = ""): EditorBlock {
+function createBlock(
+  type: BlockType = "paragraph",
+  text = "",
+  href?: string,
+): EditorBlock {
   return {
     id: crypto.randomUUID(),
     type,
     text,
+    href,
   };
 }
 
@@ -167,6 +181,10 @@ function blockToMarkdown(block: EditorBlock) {
     return `> ${block.text}`;
   }
 
+  if (block.type === "link") {
+    return `[${block.text || "Link text"}](${block.href || "https://example.com"})`;
+  }
+
   if (block.type === "code") {
     return `\`\`\`\n${block.text}\n\`\`\``;
   }
@@ -183,6 +201,15 @@ function blocksToMarkdown(blocks: EditorBlock[]) {
 }
 
 function markdownBlockToEditorBlocks(block: MarkdownBlock): EditorBlock[] {
+  const exactLink =
+    block.type === "paragraph"
+      ? /^\[([^\]]+)\]\(([^)]+)\)$/.exec(block.text.trim())
+      : null;
+
+  if (exactLink) {
+    return [createBlock("link", exactLink[1], exactLink[2])];
+  }
+
   if (block.type === "heading") {
     if (block.level === 1) {
       return [createBlock("title", block.text)];
@@ -253,6 +280,10 @@ function getBlockClass(type: BlockType) {
     return `${shared} text-lg leading-relaxed text-zinc-700 md:text-xl`;
   }
 
+  if (type === "link") {
+    return `${shared} text-lg font-medium leading-relaxed text-blue-600 underline decoration-blue-200 underline-offset-4 md:text-xl`;
+  }
+
   if (type === "quote") {
     return `${shared} border-l-4 border-zinc-300 bg-zinc-50 pl-5 text-lg leading-relaxed text-zinc-600 md:text-xl`;
   }
@@ -269,6 +300,7 @@ function labelFor(type: BlockType) {
   if (type === "heading2") return "H2";
   if (type === "heading3") return "H3";
   if (type === "bullet") return "List";
+  if (type === "link") return "Link";
   if (type === "quote") return "Quote";
   if (type === "code") return "Code";
   if (type === "divider") return "Rule";
@@ -304,6 +336,7 @@ export default function MarkdownEditor({
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(workspaceId ?? "");
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
   const [workspaceSearch, setWorkspaceSearch] = useState("");
+  const [linkEditorBlockId, setLinkEditorBlockId] = useState<string | null>(null);
   const refs = useRef<Record<string, HTMLDivElement | null>>({});
   const editorRootRef = useRef<HTMLDivElement | null>(null);
   const commandInputRef = useRef<HTMLInputElement | null>(null);
@@ -522,7 +555,7 @@ export default function MarkdownEditor({
             setFocusId(id);
           }
 
-          return { ...block, type: "paragraph", text: "" };
+          return { ...block, type: "paragraph", text: "", href: undefined };
         }
 
         const next = detectBlock(rawText, block.type);
@@ -607,6 +640,15 @@ export default function MarkdownEditor({
 
         const text = block.text.replace(/\/[\w\s-]*$/, "").trimEnd();
 
+        if (command.type === "link") {
+          return {
+            ...block,
+            type: "link",
+            text: text || "Link text",
+            href: block.href || "https://example.com",
+          };
+        }
+
         return {
           ...block,
           type: command.type,
@@ -615,6 +657,9 @@ export default function MarkdownEditor({
       }),
     );
     setFocusId(commandBlockId);
+    if (command.type === "link") {
+      setLinkEditorBlockId(commandBlockId);
+    }
     setCommandBlockId(null);
     setCommandQuery("");
     setSelectedCommandIndex(0);
@@ -624,6 +669,19 @@ export default function MarkdownEditor({
     setCommandBlockId(null);
     setCommandQuery("");
     setSelectedCommandIndex(0);
+  }
+
+  function updateLinkHref(id: string, href: string) {
+    setBlocks((current) =>
+      current.map((block) =>
+        block.id === id ? { ...block, href: href.trim() } : block,
+      ),
+    );
+  }
+
+  function openLink(block: EditorBlock) {
+    if (!block.href) return;
+    window.open(block.href, "_blank", "noopener,noreferrer");
   }
 
   function handleCommandInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {
@@ -1147,6 +1205,22 @@ export default function MarkdownEditor({
                           •
                         </span>
                       ) : null}
+                      {block.type === "link" ? (
+                        <button
+                          type="button"
+                          contentEditable={false}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() =>
+                            setLinkEditorBlockId((current) =>
+                              current === block.id ? null : block.id,
+                            )
+                          }
+                          className="mt-2 flex size-7 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600 ring-1 ring-blue-100 transition-colors hover:bg-blue-100"
+                          aria-label="Edit link URL"
+                        >
+                          <Link2 className="size-4" />
+                        </button>
+                      ) : null}
                       <div
                         data-block-id={block.id}
                         ref={(node) => syncEditableNode(node, block)}
@@ -1155,6 +1229,56 @@ export default function MarkdownEditor({
                       />
                     </div>
                   )}
+
+                  {linkEditorBlockId === block.id && block.type === "link" ? (
+                    <div
+                      contentEditable={false}
+                      className="absolute left-8 top-12 z-30 w-[min(420px,calc(100vw-3rem))] rounded-2xl border border-zinc-200 bg-white p-3 text-zinc-950 shadow-[0_24px_70px_rgba(24,24,27,0.18)] ring-1 ring-zinc-950/5"
+                    >
+                      <div className="flex items-center gap-2">
+                        <label className="sr-only" htmlFor={`link-url-${block.id}`}>
+                          Link URL
+                        </label>
+                        <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2">
+                          <Link2 className="size-4 shrink-0 text-zinc-400" />
+                          <input
+                            id={`link-url-${block.id}`}
+                            value={block.href ?? ""}
+                            onChange={(event) =>
+                              updateLinkHref(block.id, event.target.value)
+                            }
+                            onKeyDown={(event) => {
+                              event.stopPropagation();
+                              if (event.key === "Escape") {
+                                setLinkEditorBlockId(null);
+                              }
+                            }}
+                            placeholder="https://example.com"
+                            className="min-w-0 flex-1 bg-transparent text-sm text-zinc-950 outline-none placeholder:text-zinc-400"
+                            autoFocus
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => openLink(block)}
+                          className="flex size-10 items-center justify-center rounded-xl border border-zinc-200 text-zinc-500 transition-colors hover:border-zinc-300 hover:text-zinc-950"
+                          aria-label="Open link"
+                        >
+                          <ExternalLink className="size-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => setLinkEditorBlockId(null)}
+                          className="flex size-10 items-center justify-center rounded-xl border border-zinc-200 text-zinc-500 transition-colors hover:border-zinc-300 hover:text-zinc-950"
+                          aria-label="Close link editor"
+                        >
+                          <X className="size-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
 
                   {commandBlockId === block.id ? (
                     <div

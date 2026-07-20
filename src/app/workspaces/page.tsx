@@ -1,6 +1,9 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import AppShell from "@/components/ui/sidebar/AppShell";
+import {
+  getCoreMembership,
+  getCoreWorkspace,
+  SetupErrorScreen,
+} from "@/lib/core-workspace";
 import { createClient } from "@/utils/supabase/server";
 
 export default async function WorkspacesPage() {
@@ -14,65 +17,17 @@ export default async function WorkspacesPage() {
     redirect("/login");
   }
 
-  const { data: workspaces, error } = await supabase
-    .from("workspaces")
-    .select("id, name, slug, icon")
-    .order("updated_at", { ascending: false });
+  const { workspace, setupError } = await getCoreWorkspace(supabase);
 
-  if (error) {
-    throw new Error(error.message);
+  if (setupError || !workspace) {
+    return <SetupErrorScreen message={setupError ?? "Workspace missing."} />;
   }
 
-  return (
-    <AppShell>
-      <main className="min-h-screen px-6 py-10 text-zinc-950">
-        <div className="mx-auto max-w-5xl">
-          <div className="mb-8 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-medium uppercase tracking-wider text-zinc-500">
-                Studio Hub
-              </p>
-              <h1 className="mt-2 text-4xl font-semibold tracking-tight">
-                Workspaces
-              </h1>
-            </div>
-            <Link
-              href="/workspaces/new"
-              className="inline-flex h-11 items-center justify-center rounded-xl bg-zinc-950 px-5 text-sm font-semibold text-white hover:bg-zinc-800"
-            >
-              Create workspace
-            </Link>
-          </div>
+  const membership = await getCoreMembership(supabase, workspace.id, user.id);
 
-          {workspaces.length ? (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {workspaces.map((workspace) => (
-                <Link
-                  key={workspace.id}
-                  href={`/workspaces/${workspace.id}`}
-                  className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm transition-colors hover:border-zinc-300"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="flex size-12 items-center justify-center rounded-xl bg-zinc-950 text-lg font-semibold text-white">
-                      {workspace.icon}
-                    </div>
-                    <div>
-                      <p className="font-semibold">{workspace.name}</p>
-                      <p className="mt-1 text-sm text-zinc-500">
-                        {workspace.slug}
-                      </p>
-                    </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-dashed border-zinc-300 bg-white p-10 text-center text-sm text-zinc-600">
-              No workspaces yet.
-            </div>
-          )}
-        </div>
-      </main>
-    </AppShell>
-  );
+  if (!membership) {
+    redirect("/");
+  }
+
+  redirect(`/workspaces/${workspace.id}`);
 }

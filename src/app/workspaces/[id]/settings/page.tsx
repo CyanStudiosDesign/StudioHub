@@ -1,8 +1,17 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import AppShell from "@/components/ui/sidebar/AppShell";
+import {
+  getCoreMembership,
+  getCoreWorkspace,
+  SetupErrorScreen,
+} from "@/lib/core-workspace";
 import { createClient } from "@/utils/supabase/server";
-import { updateMemberPermissions } from "./actions";
+import {
+  softDeleteWorkspace,
+  updateMemberPermissions,
+  updateWorkspaceIdentity,
+} from "./actions";
 
 type WorkspaceSettingsPageProps = {
   params: Promise<{ id: string }>;
@@ -61,10 +70,28 @@ export default async function WorkspaceSettingsPage({
     redirect("/login");
   }
 
+  const { workspace: coreWorkspace, setupError } =
+    await getCoreWorkspace(supabase);
+
+  if (setupError || !coreWorkspace) {
+    return <SetupErrorScreen message={setupError ?? "Workspace missing."} />;
+  }
+
+  if (id !== coreWorkspace.id) {
+    redirect(`/workspaces/${coreWorkspace.id}/settings`);
+  }
+
+  const membership = await getCoreMembership(supabase, coreWorkspace.id, user.id);
+
+  if (!membership) {
+    redirect("/");
+  }
+
   const { data: workspace, error: workspaceError } = await supabase
     .from("workspaces")
-    .select("id, name, icon")
+    .select("id, name, slug, icon, is_deleted")
     .eq("id", id)
+    .eq("is_deleted", false)
     .maybeSingle();
 
   if (workspaceError) {
@@ -156,6 +183,55 @@ export default async function WorkspaceSettingsPage({
           </div>
 
           <div className="space-y-4">
+            <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+              <div className="mb-5">
+                <h2 className="text-lg font-semibold tracking-tight">
+                  Workspace identity
+                </h2>
+                <p className="mt-1 text-sm text-zinc-500">
+                  Update the visible workspace name and URL-friendly slug.
+                </p>
+              </div>
+
+              <form
+                action={updateWorkspaceIdentity}
+                className="grid gap-4 lg:grid-cols-[1fr_1fr_auto] lg:items-end"
+              >
+                <input type="hidden" name="workspaceId" value={workspace.id} />
+                <label className="space-y-2 text-sm font-medium text-zinc-700">
+                  Workspace name
+                  <input
+                    name="name"
+                    type="text"
+                    required
+                    minLength={2}
+                    maxLength={120}
+                    defaultValue={workspace.name}
+                    className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-950"
+                  />
+                </label>
+                <label className="space-y-2 text-sm font-medium text-zinc-700">
+                  Slug
+                  <input
+                    name="slug"
+                    type="text"
+                    required
+                    minLength={3}
+                    maxLength={63}
+                    pattern="^[a-z0-9][a-z0-9-]{2,62}$"
+                    defaultValue={workspace.slug}
+                    className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-950"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  className="h-11 rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white hover:bg-zinc-800"
+                >
+                  Save identity
+                </button>
+              </form>
+            </section>
+
             {members.map((member) => {
               const profile = profileMap.get(member.user_id);
               const permission = permissionMap.get(member.user_id);
@@ -296,6 +372,57 @@ export default async function WorkspaceSettingsPage({
                 </section>
               );
             })}
+
+            <section className="rounded-2xl border border-red-200 bg-red-50 p-5 shadow-sm">
+              <div className="mb-5">
+                <h2 className="text-lg font-semibold tracking-tight text-red-950">
+                  Delete workspace
+                </h2>
+                <p className="mt-1 max-w-2xl text-sm leading-6 text-red-700">
+                  This will hide the workspace from the app and mark it as
+                  deleted in the database. It will not permanently remove any
+                  rows.
+                </p>
+              </div>
+
+              <form
+                action={softDeleteWorkspace}
+                className="grid gap-4 lg:grid-cols-[1fr_1fr_auto] lg:items-end"
+              >
+                <input type="hidden" name="workspaceId" value={workspace.id} />
+                <input
+                  type="hidden"
+                  name="workspaceSlug"
+                  value={workspace.slug}
+                />
+                <label className="space-y-2 text-sm font-medium text-red-950">
+                  Type the workspace slug
+                  <input
+                    name="confirmSlug"
+                    type="text"
+                    required
+                    placeholder={workspace.slug}
+                    className="h-11 w-full rounded-xl border border-red-200 bg-white px-3 text-sm text-zinc-950 outline-none focus:border-red-700"
+                  />
+                </label>
+                <label className="space-y-2 text-sm font-medium text-red-950">
+                  Type delete my workspace
+                  <input
+                    name="confirmPhrase"
+                    type="text"
+                    required
+                    placeholder="delete my workspace"
+                    className="h-11 w-full rounded-xl border border-red-200 bg-white px-3 text-sm text-zinc-950 outline-none focus:border-red-700"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  className="h-11 rounded-xl bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700"
+                >
+                  Delete workspace
+                </button>
+              </form>
+            </section>
           </div>
         </div>
       </main>

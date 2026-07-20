@@ -1060,6 +1060,61 @@ export type Database = {
           },
         ];
       };
+      workspace_join_requests: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          user_id: string;
+          status: "pending" | "approved" | "rejected" | "cancelled";
+          requested_at: string;
+          reviewed_at: string | null;
+          reviewed_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          user_id: string;
+          status?: "pending" | "approved" | "rejected" | "cancelled";
+          requested_at?: string;
+          reviewed_at?: string | null;
+          reviewed_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          workspace_id?: string;
+          user_id?: string;
+          status?: "pending" | "approved" | "rejected" | "cancelled";
+          requested_at?: string;
+          reviewed_at?: string | null;
+          reviewed_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "workspace_join_requests_workspace_id_fkey";
+            columns: ["workspace_id"];
+            referencedRelation: "workspaces";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "workspace_join_requests_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "workspace_join_requests_reviewed_by_fkey";
+            columns: ["reviewed_by"];
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       workspace_member_permissions: {
         Row: {
           workspace_id: string;
@@ -1124,6 +1179,9 @@ export type Database = {
           icon: string;
           description: string | null;
           avatar_url: string | null;
+          is_deleted: boolean;
+          deleted_at: string | null;
+          deleted_by: string | null;
           created_at: string;
           updated_at: string | null;
         };
@@ -1135,6 +1193,9 @@ export type Database = {
           icon?: string;
           description?: string | null;
           avatar_url?: string | null;
+          is_deleted?: boolean;
+          deleted_at?: string | null;
+          deleted_by?: string | null;
           created_at?: string;
           updated_at?: string | null;
         };
@@ -1146,6 +1207,9 @@ export type Database = {
           icon?: string;
           description?: string | null;
           avatar_url?: string | null;
+          is_deleted?: boolean;
+          deleted_at?: string | null;
+          deleted_by?: string | null;
           created_at?: string;
           updated_at?: string | null;
         };
@@ -1176,6 +1240,24 @@ export type Database = {
           p_icon?: string;
         };
         Returns: string;
+      };
+      get_workspace_by_slug: {
+        Args: {
+          p_slug: string;
+        };
+        Returns: {
+          id: string;
+          name: string;
+          slug: string;
+          icon: string;
+          description: string | null;
+        }[];
+      };
+      request_workspace_join: {
+        Args: {
+          p_workspace_slug: string;
+        };
+        Returns: Database["public"]["Tables"]["workspace_join_requests"]["Row"];
       };
       lookup_profile_by_email: {
         Args: {

@@ -8,10 +8,10 @@ import {
   FilePlus,
   FileText,
   Home,
+  LayoutDashboard,
   LogOut,
   Megaphone,
   PanelLeft,
-  Users,
 } from "lucide-react";
 import { useSidebar } from "@/components/ui/provider/SidebarProvider";
 import { cn } from "@/lib/utils";
@@ -35,13 +35,8 @@ function isNavItemActive(
   if (item.label === "Projects") {
     return pathname === href || pathname.startsWith("/projects/");
   }
-  if (item.label === "Workspaces") {
-    return (
-      pathname === "/workspaces" ||
-      /^\/workspaces\/[^/]+$/.test(pathname) ||
-      pathname === "/workspaces/new" ||
-      /^\/workspaces\/[^/]+\/settings$/.test(pathname)
-    );
+  if (item.label === "Workspace") {
+    return /^\/workspaces\/[^/]+($|\/settings$)/.test(pathname);
   }
 
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -57,10 +52,13 @@ export default function Sidebar({
   const createDocumentHref = workspaceId
     ? `/editor?workspaceId=${workspaceId}`
     : "/editor";
+  const projectsHref = workspaceId
+    ? `/workspaces/${workspaceId}/projects`
+    : "/workspaces";
   const navItems = [
     { href: "/", label: "Home", icon: Home },
     { href: "/documents", label: "Documents", icon: FileText },
-    { href: "/workspaces", label: "Workspaces", icon: Users },
+    { href: projectsHref, label: "Projects", icon: LayoutDashboard },
     {
       href: "/announcements",
       label: "Announcements",

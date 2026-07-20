@@ -9,7 +9,7 @@ type AppShellProps = {
   workspaceId?: string;
 };
 
-async function hasUnreadAnnouncements() {
+async function hasUnreadAnnouncements(workspaceId?: string) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -17,10 +17,16 @@ async function hasUnreadAnnouncements() {
 
   if (!user) return false;
 
-  const { data: announcements, error: announcementsError } = await supabase
+  let query = supabase
     .from("announcements")
     .select("id")
     .limit(100);
+
+  if (workspaceId) {
+    query = query.eq("workspace_id", workspaceId);
+  }
+
+  const { data: announcements, error: announcementsError } = await query;
 
   if (announcementsError || !announcements.length) {
     return false;
@@ -40,7 +46,7 @@ async function hasUnreadAnnouncements() {
 }
 
 export default async function AppShell({ children, workspaceId }: AppShellProps) {
-  const hasUnread = await hasUnreadAnnouncements();
+  const hasUnread = await hasUnreadAnnouncements(workspaceId);
 
   return (
     <SidebarProvider>

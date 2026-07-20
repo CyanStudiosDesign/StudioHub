@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { getCoreWorkspace } from "@/lib/core-workspace";
 import { createClient } from "@/utils/supabase/action";
 import type { Database } from "@/types/supabase";
 
@@ -95,6 +96,15 @@ export async function createCampaign(formData: FormData) {
     workspaceId,
     "creatives.manage",
   );
+  const { workspace, setupError } = await getCoreWorkspace(supabase);
+
+  if (setupError || !workspace) {
+    throw new Error(setupError ?? "Core workspace is not configured.");
+  }
+
+  if (workspaceId !== workspace.id) {
+    throw new Error("Creative campaigns can only be created in the core workspace.");
+  }
 
   const { data: campaign, error } = await supabase
     .from("creative_campaigns")

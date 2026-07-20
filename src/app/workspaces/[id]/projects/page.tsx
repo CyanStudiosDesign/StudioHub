@@ -2,6 +2,11 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, LayoutDashboard } from "lucide-react";
 import AppShell from "@/components/ui/sidebar/AppShell";
+import {
+  getCoreMembership,
+  getCoreWorkspace,
+  SetupErrorScreen,
+} from "@/lib/core-workspace";
 import { createClient } from "@/utils/supabase/server";
 import {
   assignProjectMember,
@@ -46,10 +51,28 @@ export default async function WorkspaceProjectsPage({
     redirect("/login");
   }
 
+  const { workspace: coreWorkspace, setupError } =
+    await getCoreWorkspace(supabase);
+
+  if (setupError || !coreWorkspace) {
+    return <SetupErrorScreen message={setupError ?? "Workspace missing."} />;
+  }
+
+  if (id !== coreWorkspace.id) {
+    redirect(`/workspaces/${coreWorkspace.id}/projects`);
+  }
+
+  const membership = await getCoreMembership(supabase, coreWorkspace.id, user.id);
+
+  if (!membership) {
+    redirect("/");
+  }
+
   const { data: workspace, error: workspaceError } = await supabase
     .from("workspaces")
     .select("id, name, icon")
     .eq("id", id)
+    .eq("is_deleted", false)
     .maybeSingle();
 
   if (workspaceError) {

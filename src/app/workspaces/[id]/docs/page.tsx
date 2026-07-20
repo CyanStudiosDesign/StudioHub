@@ -1,6 +1,12 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import AppShell from "@/components/ui/sidebar/AppShell";
+import {
+  getCoreMembership,
+  getCoreWorkspace,
+  SetupErrorScreen,
+} from "@/lib/core-workspace";
+import { getDocumentHref } from "@/lib/document-paths";
 import { createClient } from "@/utils/supabase/server";
 
 type WorkspaceDocsPageProps = {
@@ -42,10 +48,28 @@ export default async function WorkspaceDocsPage({
     redirect("/login");
   }
 
+  const { workspace: coreWorkspace, setupError } =
+    await getCoreWorkspace(supabase);
+
+  if (setupError || !coreWorkspace) {
+    return <SetupErrorScreen message={setupError ?? "Workspace missing."} />;
+  }
+
+  if (id !== coreWorkspace.id) {
+    redirect(`/workspaces/${coreWorkspace.id}/docs`);
+  }
+
+  const membership = await getCoreMembership(supabase, coreWorkspace.id, user.id);
+
+  if (!membership) {
+    redirect("/");
+  }
+
   const { data: workspace, error: workspaceError } = await supabase
     .from("workspaces")
     .select("id, name, icon")
     .eq("id", id)
+    .eq("is_deleted", false)
     .maybeSingle();
 
   if (workspaceError) {
@@ -142,19 +166,19 @@ export default async function WorkspaceDocsPage({
                       key={document.id}
                       className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
                     >
-                      <div>
-                        <Link
-                          href={`/docs/${document.id}`}
-                          className="font-semibold text-zinc-950 hover:underline"
-                        >
+                      <Link
+                        href={getDocumentHref(document)}
+                        className="min-w-0 flex-1 rounded-xl transition-colors hover:bg-zinc-50"
+                      >
+                        <p className="font-semibold text-zinc-950 hover:underline">
                           {document.title}
-                        </Link>
+                        </p>
                         <p className="mt-1 text-sm text-zinc-500">
                           Created by {authorName(authorMap.get(document.author_id))}
                           {" · "}
                           Updated {formatDate(document.updated_at)}
                         </p>
-                      </div>
+                      </Link>
                       <div className="flex items-center gap-2">
                         <Link
                           href={`/editor?docId=${document.id}`}
@@ -163,7 +187,7 @@ export default async function WorkspaceDocsPage({
                           Edit
                         </Link>
                         <Link
-                          href={`/docs/${document.id}`}
+                          href={getDocumentHref(document)}
                           className="rounded-lg bg-zinc-950 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800"
                         >
                           View

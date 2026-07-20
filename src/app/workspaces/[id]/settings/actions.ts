@@ -38,6 +38,92 @@ function checked(formData: FormData, name: string) {
   return formData.get(name) === "on";
 }
 
+function normalizeSlug(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function assertValidSlug(slug: string) {
+  if (!/^[a-z0-9][a-z0-9-]{2,62}$/.test(slug)) {
+    throw new Error(
+      "Workspace slug must be 3-63 characters and use lowercase letters, numbers, or hyphens.",
+    );
+  }
+}
+
+export async function updateWorkspaceIdentity(formData: FormData) {
+  const workspaceId = String(formData.get("workspaceId") ?? "");
+  const name = String(formData.get("name") ?? "").trim();
+  const slug = normalizeSlug(String(formData.get("slug") ?? ""));
+
+  if (!workspaceId) {
+    throw new Error("Workspace is required.");
+  }
+
+  if (name.length < 2 || name.length > 120) {
+    throw new Error("Workspace name must be between 2 and 120 characters.");
+  }
+
+  assertValidSlug(slug);
+
+  const { supabase } = await requireWorkspaceOwner(workspaceId);
+
+  const { error } = await supabase
+    .from("workspaces")
+    .update({ name, slug })
+    .eq("id", workspaceId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  revalidatePath("/workspaces");
+  revalidatePath(`/workspaces/${workspaceId}`);
+  revalidatePath(`/workspaces/${workspaceId}/settings`);
+}
+
+export async function softDeleteWorkspace(formData: FormData) {
+  const workspaceId = String(formData.get("workspaceId") ?? "");
+  const workspaceSlug = String(formData.get("workspaceSlug") ?? "");
+  const confirmSlug = String(formData.get("confirmSlug") ?? "").trim();
+  const confirmPhrase = String(formData.get("confirmPhrase") ?? "").trim();
+
+  if (!workspaceId || !workspaceSlug) {
+    throw new Error("Workspace is required.");
+  }
+
+  if (confirmSlug !== workspaceSlug) {
+    throw new Error("The workspace slug confirmation does not match.");
+  }
+
+  if (confirmPhrase !== "delete my workspace") {
+    throw new Error('Type "delete my workspace" to confirm.');
+  }
+
+  const { supabase, userId } = await requireWorkspaceOwner(workspaceId);
+
+  const { error } = await supabase
+    .from("workspaces")
+    .update({
+      is_deleted: true,
+      deleted_at: new Date().toISOString(),
+      deleted_by: userId,
+    })
+    .eq("id", workspaceId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  revalidatePath("/");
+  revalidatePath("/workspaces");
+  redirect("/workspaces");
+}
+
 export async function updateMemberPermissions(formData: FormData) {
   const workspaceId = String(formData.get("workspaceId") ?? "");
   const userId = String(formData.get("userId") ?? "");

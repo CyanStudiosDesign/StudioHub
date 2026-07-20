@@ -8,10 +8,16 @@ import {
   FileText,
   LayoutDashboard,
   Megaphone,
-  Plus,
   Sparkles,
 } from "lucide-react";
+import { requestCoreWorkspaceAccess } from "@/app/workspaces/core-actions";
 import AppShell from "@/components/ui/sidebar/AppShell";
+import {
+  getCoreMembership,
+  getCoreWorkspace,
+  SetupErrorScreen,
+} from "@/lib/core-workspace";
+import { getDocumentHref } from "@/lib/document-paths";
 import { createClient } from "@/utils/supabase/server";
 
 function formatDate(value: string | null | undefined) {
@@ -96,10 +102,58 @@ function QuickLink({
         />
       </div>
       <h2 className="mt-4 text-lg font-semibold tracking-tight">{title}</h2>
-      <p className={dark ? "mt-2 text-sm text-zinc-300" : "mt-2 text-sm text-zinc-500"}>
+      <p
+        className={
+          dark ? "mt-2 text-sm text-zinc-300" : "mt-2 text-sm text-zinc-500"
+        }
+      >
         {description}
       </p>
     </Link>
+  );
+}
+
+function JoinWorkspaceScreen({
+  workspace,
+  fullName,
+  joinStatus,
+}: {
+  workspace: { id: string; name: string; slug: string; icon: string };
+  fullName: string;
+  joinStatus?: string;
+}) {
+  const isPending = joinStatus === "pending";
+
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-[#f6f7fb] px-6 py-12 text-zinc-950">
+      <section className="w-full max-w-3xl rounded-3xl border border-zinc-200 bg-white p-8 text-center shadow-sm">
+        <div className="mx-auto flex size-16 items-center justify-center rounded-2xl bg-zinc-950 text-2xl font-semibold text-white">
+          {workspace.icon}
+        </div>
+        <p className="mt-6 text-sm font-medium text-zinc-500">
+          Welcome {fullName}
+        </p>
+        <h1 className="mt-2 text-4xl font-semibold tracking-tight">
+          {workspace.name}
+        </h1>
+        <p className="mx-auto mt-4 max-w-xl text-sm leading-6 text-zinc-600">
+          This Studio Hub is private. Request access and an administrator with
+          member-management permission can approve you.
+        </p>
+
+        {isPending ? (
+          <div className="mx-auto mt-8 max-w-md rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-medium text-amber-800">
+            Your request is waiting for approval.
+          </div>
+        ) : (
+          <form action={requestCoreWorkspaceAccess} className="mt-8">
+            <button className="h-12 rounded-xl bg-zinc-950 px-6 text-sm font-semibold text-white transition-colors hover:bg-zinc-800">
+              Request to join
+            </button>
+          </form>
+        )}
+      </section>
+    </main>
   );
 }
 
@@ -124,53 +178,62 @@ export default async function Home() {
   const fullName =
     profile?.full_name ?? user.user_metadata.full_name ?? user.email ?? "there";
 
-  const { data: workspaces, error: workspacesError } = await supabase
-    .from("workspaces")
-    .select("id, name, slug, icon, updated_at")
-    .order("updated_at", { ascending: false })
-    .limit(6);
+  const { workspace, setupError } = await getCoreWorkspace(supabase);
 
-  if (workspacesError) {
-    throw new Error(workspacesError.message);
+  if (setupError || !workspace) {
+    return <SetupErrorScreen message={setupError ?? "Workspace missing."} />;
   }
 
-  const workspaceIds = workspaces.map((workspace) => workspace.id);
+  const membership = await getCoreMembership(supabase, workspace.id, user.id);
 
-  const { data: documents } = workspaceIds.length
-    ? await supabase
-        .from("documents")
-        .select("id, title, workspace_id, author_id, updated_at")
-        .in("workspace_id", workspaceIds)
-        .order("updated_at", { ascending: false })
-        .limit(5)
-    : { data: [] };
+  if (!membership) {
+    const { data: joinRequest } = await supabase
+      .from("workspace_join_requests")
+      .select("status")
+      .eq("workspace_id", workspace.id)
+      .eq("user_id", user.id)
+      .order("requested_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-  const { data: projects } = workspaceIds.length
-    ? await supabase
-        .from("projects")
-        .select("id, workspace_id, name, status, updated_at")
-        .in("workspace_id", workspaceIds)
-        .order("updated_at", { ascending: false })
-        .limit(5)
-    : { data: [] };
+    return (
+      <JoinWorkspaceScreen
+        workspace={workspace}
+        fullName={fullName}
+        joinStatus={joinRequest?.status}
+      />
+    );
+  }
 
-  const { data: creativeCampaigns } = workspaceIds.length
-    ? await supabase
-        .from("creative_campaigns")
-        .select("id, workspace_id, title, status, updated_at")
-        .in("workspace_id", workspaceIds)
-        .order("updated_at", { ascending: false })
-        .limit(5)
-    : { data: [] };
+  const workspaceId = workspace.id;
 
-  const { data: announcements } = workspaceIds.length
-    ? await supabase
-        .from("announcements")
-        .select("id, workspace_id, title, message, created_at")
-        .in("workspace_id", workspaceIds)
-        .order("created_at", { ascending: false })
-        .limit(6)
-    : { data: [] };
+  const { data: documents } = await supabase
+    .from("documents")
+    .select("id, title, workspace_id, author_id, updated_at")
+    .eq("workspace_id", workspaceId)
+    .order("updated_at", { ascending: false })
+    .limit(5);
+
+  const { data: projects } = await supabase
+    .from("projects")
+    .select("id, workspace_id, name, status, updated_at")
+    .eq("workspace_id", workspaceId)
+    .order("updated_at", { ascending: false })
+    .limit(5);
+
+  const { data: creativeCampaigns } = await supabase
+    .from("creative_campaigns")
+    .select("id, workspace_id, title, status, updated_at")
+    .eq("workspace_id", workspaceId)
+    .order("updated_at", { ascending: false })
+    .limit(5);
+
+  const { data: announcements } = await supabase
+    .from("announcements")
+    .select("id, workspace_id, title, message, created_at")
+    .eq("workspace_id", workspaceId)
+    .order("created_at", { ascending: false })
+    .limit(6);
 
   const announcementIds =
     announcements?.map((announcement) => announcement.id) ?? [];
@@ -184,65 +247,55 @@ export default async function Home() {
   const readIds = new Set((reads ?? []).map((read) => read.announcement_id));
   const hasUnreadAnnouncements = announcementIds.some((id) => !readIds.has(id));
 
-  const workspaceMap = new Map(
-    workspaces.map((workspace) => [workspace.id, workspace]),
-  );
-
   return (
-    <AppShell>
+    <AppShell workspaceId={workspaceId}>
       <main className="min-h-screen px-6 py-10 text-zinc-950">
         <div className="mx-auto max-w-7xl space-y-6">
           <nav className="flex items-center justify-between rounded-2xl border border-zinc-200 bg-white px-4 py-3 shadow-sm">
-            <Link href="/" className="flex items-center gap-2 text-base font-semibold tracking-tight">
+            <Link
+              href="/"
+              className="flex items-center gap-2 text-base font-semibold tracking-tight"
+            >
               <Sparkles className="size-4" />
               Studio Hub
             </Link>
 
-            <div className="flex items-center gap-3">
-              <Link
-                href="/announcements"
-                aria-label="Announcements"
-                className="relative inline-flex size-10 items-center justify-center rounded-xl border border-zinc-200 text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-950"
-              >
-                <Bell className="size-5" />
-                {hasUnreadAnnouncements ? (
-                  <span className="absolute -right-1 -top-1 size-3 rounded-full bg-red-500 ring-2 ring-white" />
-                ) : null}
-              </Link>
-              <Link
-                href="/workspaces/new"
-                className="inline-flex h-10 items-center gap-2 rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white transition-colors hover:bg-zinc-800"
-              >
-                <Plus className="size-4" />
-                Workspace
-              </Link>
-            </div>
+            <Link
+              href="/announcements"
+              aria-label="Announcements"
+              className="relative inline-flex size-10 items-center justify-center rounded-xl border border-zinc-200 text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-950"
+            >
+              <Bell className="size-5" />
+              {hasUnreadAnnouncements ? (
+                <span className="absolute -right-1 -top-1 size-3 rounded-full bg-red-500 ring-2 ring-white" />
+              ) : null}
+            </Link>
           </nav>
 
           <section className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
             <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <p className="text-sm font-medium text-zinc-500">
-                  Command dashboard
+                  {workspace.name}
                 </p>
                 <h1 className="mt-2 text-4xl font-semibold tracking-tight">
                   Hello {fullName}
                 </h1>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-600">
-                  Jump into workspaces, create documents, review creative work,
-                  and catch team updates without digging through the sidebar.
+                  Open documents, manage projects, review creative work, and
+                  read team updates for the core workspace.
                 </p>
               </div>
               <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[360px]">
                 <Link
-                  href="/workspaces/new"
+                  href={`/workspaces/${workspaceId}/projects`}
                   className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white hover:bg-zinc-800"
                 >
-                  <Plus className="size-4" />
-                  New workspace
+                  <BriefcaseBusiness className="size-4" />
+                  Projects
                 </Link>
                 <Link
-                  href="/editor"
+                  href={`/editor?workspaceId=${workspaceId}`}
                   className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-zinc-200 px-4 text-sm font-semibold text-zinc-700 hover:border-zinc-300 hover:text-zinc-950"
                 >
                   <FilePlus className="size-4" />
@@ -253,11 +306,7 @@ export default async function Home() {
           </section>
 
           <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <StatCard
-              label="Workspaces"
-              value={workspaces.length}
-              detail="Active places you can open"
-            />
+            <StatCard label="Workspace" value={workspace.name} detail={workspace.slug} />
             <StatCard
               label="Projects"
               value={projects?.length ?? 0}
@@ -277,10 +326,10 @@ export default async function Home() {
 
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <QuickLink
-              href={workspaces[0] ? `/workspaces/${workspaces[0].id}` : "/workspaces"}
+              href={`/workspaces/${workspaceId}`}
               icon={LayoutDashboard}
               title="Open workspace"
-              description="Go straight to your latest workspace dashboard."
+              description="Go to the core workspace command center."
               dark
             />
             <QuickLink
@@ -309,51 +358,6 @@ export default async function Home() {
               <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
                 <div className="flex items-center justify-between gap-4">
                   <h2 className="text-lg font-semibold tracking-tight">
-                    Workspaces
-                  </h2>
-                  <Link
-                    href="/workspaces"
-                    className="text-sm font-semibold text-zinc-500 hover:text-zinc-950"
-                  >
-                    See all
-                  </Link>
-                </div>
-
-                {workspaces.length ? (
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    {workspaces.map((workspace) => (
-                      <Link
-                        key={workspace.id}
-                        href={`/workspaces/${workspace.id}`}
-                        className="rounded-2xl border border-zinc-200 p-4 transition hover:border-zinc-300 hover:bg-zinc-50"
-                      >
-                        <div className="flex items-center gap-4">
-                          <div className="flex size-12 items-center justify-center rounded-xl bg-zinc-950 text-lg font-semibold text-white">
-                            {workspace.icon}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="truncate font-semibold text-zinc-950">
-                              {workspace.name}
-                            </p>
-                            <p className="mt-1 truncate text-sm text-zinc-500">
-                              {workspace.slug}
-                            </p>
-                          </div>
-                        </div>
-                        <p className="mt-4 text-xs text-zinc-400">
-                          Updated {formatDate(workspace.updated_at)}
-                        </p>
-                      </Link>
-                    ))}
-                  </div>
-                ) : (
-                  <EmptyState text="No workspaces yet. Create one to start organizing your team." />
-                )}
-              </section>
-
-              <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-                <div className="flex items-center justify-between gap-4">
-                  <h2 className="text-lg font-semibold tracking-tight">
                     Recently updated documents
                   </h2>
                   <Link
@@ -365,27 +369,23 @@ export default async function Home() {
                 </div>
                 <div className="mt-4 space-y-2">
                   {documents?.length ? (
-                    documents.map((document) => {
-                      const workspace = workspaceMap.get(document.workspace_id);
-                      return (
-                        <Link
-                          key={document.id}
-                          href={`/docs/${document.id}`}
-                          className="flex items-center justify-between gap-4 rounded-xl bg-zinc-50 px-3 py-3 transition hover:bg-zinc-100"
-                        >
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-zinc-950">
-                              {document.title}
-                            </p>
-                            <p className="mt-1 text-xs text-zinc-500">
-                              {workspace?.name ?? "Workspace"} ·{" "}
-                              {formatDate(document.updated_at)}
-                            </p>
-                          </div>
-                          <FileText className="size-4 shrink-0 text-zinc-400" />
-                        </Link>
-                      );
-                    })
+                    documents.map((document) => (
+                      <Link
+                        key={document.id}
+                        href={getDocumentHref(document)}
+                        className="flex items-center justify-between gap-4 rounded-xl bg-zinc-50 px-3 py-3 transition hover:bg-zinc-100"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-zinc-950">
+                            {document.title}
+                          </p>
+                          <p className="mt-1 text-xs text-zinc-500">
+                            {workspace.name} · {formatDate(document.updated_at)}
+                          </p>
+                        </div>
+                        <FileText className="size-4 shrink-0 text-zinc-400" />
+                      </Link>
+                    ))
                   ) : (
                     <EmptyState text="No recent documents yet." />
                   )}
@@ -403,29 +403,25 @@ export default async function Home() {
                 </div>
                 <div className="mt-4 space-y-2">
                   {projects?.length ? (
-                    projects.map((project) => {
-                      const workspace = workspaceMap.get(project.workspace_id);
-                      return (
-                        <Link
-                          key={project.id}
-                          href={`/projects/${project.id}`}
-                          className="block rounded-xl bg-zinc-50 px-3 py-3 transition hover:bg-zinc-100"
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="truncate text-sm font-semibold text-zinc-950">
-                              {project.name}
-                            </p>
-                            <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-zinc-500 ring-1 ring-zinc-200">
-                              {project.status}
-                            </span>
-                          </div>
-                          <p className="mt-1 text-xs text-zinc-500">
-                            {workspace?.name ?? "Workspace"} ·{" "}
-                            {formatDate(project.updated_at)}
+                    projects.map((project) => (
+                      <Link
+                        key={project.id}
+                        href={`/projects/${project.id}`}
+                        className="block rounded-xl bg-zinc-50 px-3 py-3 transition hover:bg-zinc-100"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="truncate text-sm font-semibold text-zinc-950">
+                            {project.name}
                           </p>
-                        </Link>
-                      );
-                    })
+                          <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-zinc-500 ring-1 ring-zinc-200">
+                            {project.status}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-zinc-500">
+                          {workspace.name} · {formatDate(project.updated_at)}
+                        </p>
+                      </Link>
+                    ))
                   ) : (
                     <EmptyState text="No project shortcuts yet." />
                   )}
@@ -451,7 +447,6 @@ export default async function Home() {
                   {announcements?.length ? (
                     announcements.slice(0, 4).map((announcement) => {
                       const unread = !readIds.has(announcement.id);
-                      const workspace = workspaceMap.get(announcement.workspace_id);
                       return (
                         <Link
                           key={announcement.id}
@@ -467,7 +462,7 @@ export default async function Home() {
                             ) : null}
                           </div>
                           <p className="mt-1 line-clamp-2 text-xs leading-5 text-zinc-500">
-                            {workspace?.name ?? "Workspace"} · {announcement.message}
+                            {announcement.message}
                           </p>
                         </Link>
                       );
@@ -487,29 +482,25 @@ export default async function Home() {
                 </div>
                 <div className="mt-4 space-y-2">
                   {creativeCampaigns?.length ? (
-                    creativeCampaigns.map((campaign) => {
-                      const workspace = workspaceMap.get(campaign.workspace_id);
-                      return (
-                        <Link
-                          key={campaign.id}
-                          href={`/creatives/${campaign.id}`}
-                          className="block rounded-xl bg-zinc-50 px-3 py-3 transition hover:bg-zinc-100"
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="truncate text-sm font-semibold text-zinc-950">
-                              {campaign.title}
-                            </p>
-                            <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-zinc-500 ring-1 ring-zinc-200">
-                              {campaign.status}
-                            </span>
-                          </div>
-                          <p className="mt-1 text-xs text-zinc-500">
-                            {workspace?.name ?? "Workspace"} ·{" "}
-                            {formatDate(campaign.updated_at)}
+                    creativeCampaigns.map((campaign) => (
+                      <Link
+                        key={campaign.id}
+                        href={`/creatives/${campaign.id}`}
+                        className="block rounded-xl bg-zinc-50 px-3 py-3 transition hover:bg-zinc-100"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="truncate text-sm font-semibold text-zinc-950">
+                            {campaign.title}
                           </p>
-                        </Link>
-                      );
-                    })
+                          <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-zinc-500 ring-1 ring-zinc-200">
+                            {campaign.status}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-zinc-500">
+                          {workspace.name} · {formatDate(campaign.updated_at)}
+                        </p>
+                      </Link>
+                    ))
                   ) : (
                     <EmptyState text="No creative campaigns yet." />
                   )}

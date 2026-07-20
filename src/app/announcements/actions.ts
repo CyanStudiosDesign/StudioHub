@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { getCoreWorkspace } from "@/lib/core-workspace";
 import { createClient } from "@/utils/supabase/action";
 
 async function requireUser() {
@@ -28,6 +29,16 @@ export async function createAnnouncement(formData: FormData) {
   }
 
   const { supabase, userId } = await requireUser();
+  const { workspace, setupError } = await getCoreWorkspace(supabase);
+
+  if (setupError || !workspace) {
+    throw new Error(setupError ?? "Core workspace is not configured.");
+  }
+
+  if (workspaceId !== workspace.id) {
+    throw new Error("Announcements can only be posted to the core workspace.");
+  }
+
   const { data: isAdmin, error: adminError } = await supabase.rpc(
     "is_workspace_admin",
     {

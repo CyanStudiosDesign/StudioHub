@@ -1,5 +1,10 @@
 import { notFound, redirect } from "next/navigation";
 import AppShell from "@/components/ui/sidebar/AppShell";
+import {
+  getCoreMembership,
+  getCoreWorkspace,
+  SetupErrorScreen,
+} from "@/lib/core-workspace";
 import { createClient } from "@/utils/supabase/server";
 import type {
   Database,
@@ -95,6 +100,19 @@ export default async function ProjectDashboardPage({
     redirect("/login");
   }
 
+  const { workspace: coreWorkspace, setupError } =
+    await getCoreWorkspace(supabase);
+
+  if (setupError || !coreWorkspace) {
+    return <SetupErrorScreen message={setupError ?? "Workspace missing."} />;
+  }
+
+  const membership = await getCoreMembership(supabase, coreWorkspace.id, user.id);
+
+  if (!membership) {
+    redirect("/");
+  }
+
   const { data: project, error: projectError } = await supabase
     .from("projects")
     .select(
@@ -105,6 +123,10 @@ export default async function ProjectDashboardPage({
 
   if (projectError) throw new Error(projectError.message);
   if (!project) notFound();
+
+  if (project.workspace_id !== coreWorkspace.id) {
+    notFound();
+  }
 
   const { data: canManage, error: manageError } = await supabase.rpc(
     "can_manage_project",

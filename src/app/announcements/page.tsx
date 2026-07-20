@@ -1,6 +1,11 @@
 import { Megaphone } from "lucide-react";
 import { redirect } from "next/navigation";
 import AppShell from "@/components/ui/sidebar/AppShell";
+import {
+  getCoreMembership,
+  getCoreWorkspace,
+  SetupErrorScreen,
+} from "@/lib/core-workspace";
 import { createClient } from "@/utils/supabase/server";
 import { createAnnouncement, markAnnouncementsRead } from "./actions";
 
@@ -22,36 +27,25 @@ export default async function AnnouncementsPage() {
     redirect("/login");
   }
 
-  const { data: workspaceMembers, error: membersError } = await supabase
-    .from("workspace_members")
-    .select("workspace_id, user_id, role")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: true });
+  const { workspace, setupError } = await getCoreWorkspace(supabase);
 
-  if (membersError) {
-    throw new Error(membersError.message);
+  if (setupError || !workspace) {
+    return <SetupErrorScreen message={setupError ?? "Workspace missing."} />;
   }
 
-  const workspaceIds = workspaceMembers.map((member) => member.workspace_id);
-  const { data: workspaces, error: workspacesError } = workspaceIds.length
-    ? await supabase
-        .from("workspaces")
-        .select("id, name, icon")
-        .in("id", workspaceIds)
-    : { data: [], error: null };
+  const membership = await getCoreMembership(supabase, workspace.id, user.id);
 
-  if (workspacesError) {
-    throw new Error(workspacesError.message);
+  if (!membership) {
+    redirect("/");
   }
 
-  const { data: announcements, error: announcementsError } = workspaceIds.length
-    ? await supabase
+  const { data: announcements, error: announcementsError } =
+    await supabase
         .from("announcements")
         .select("id, workspace_id, title, message, created_by, created_at, updated_at")
-        .in("workspace_id", workspaceIds)
+        .eq("workspace_id", workspace.id)
         .order("created_at", { ascending: false })
-        .limit(80)
-    : { data: [], error: null };
+        .limit(80);
 
   if (announcementsError) {
     throw new Error(announcementsError.message);
@@ -84,21 +78,16 @@ export default async function AnnouncementsPage() {
     throw new Error(authorsError.message);
   }
 
-  const workspaceMap = new Map(workspaces.map((workspace) => [workspace.id, workspace]));
   const authorMap = new Map(authors.map((author) => [author.id, author]));
   const readIds = new Set(reads.map((read) => read.announcement_id));
   const unreadAnnouncements = announcements.filter(
     (announcement) => !readIds.has(announcement.id),
   );
-  const adminWorkspaces = workspaceMembers
-    .filter((member) => member.role === "owner" || member.role === "admin")
-    .map((member) => workspaceMap.get(member.workspace_id))
-    .filter((workspace): workspace is NonNullable<typeof workspace> =>
-      Boolean(workspace),
-    );
+  const canPost =
+    membership.role === "owner" || membership.role === "admin";
 
   return (
-    <AppShell>
+    <AppShell workspaceId={workspace.id}>
       <main className="min-h-screen px-6 py-10 text-zinc-950">
         <div className="mx-auto max-w-5xl space-y-6">
           <section className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
@@ -145,7 +134,7 @@ export default async function AnnouncementsPage() {
             </div>
           </section>
 
-          {adminWorkspaces.length ? (
+          {canPost ? (
             <form
               action={createAnnouncement}
               className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
@@ -154,18 +143,10 @@ export default async function AnnouncementsPage() {
                 New announcement
               </h2>
               <div className="mt-4 grid gap-3 md:grid-cols-[220px_1fr]">
-                <select
-                  name="workspaceId"
-                  required
-                  className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-950"
-                >
-                  <option value="">Workspace</option>
-                  {adminWorkspaces.map((workspace) => (
-                    <option key={workspace.id} value={workspace.id}>
-                      {workspace.icon} {workspace.name}
-                    </option>
-                  ))}
-                </select>
+                <input type="hidden" name="workspaceId" value={workspace.id} />
+                <div className="flex h-11 items-center rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-sm font-medium text-zinc-600">
+                  {workspace.icon} {workspace.name}
+                </div>
                 <input
                   name="title"
                   required
@@ -190,7 +171,6 @@ export default async function AnnouncementsPage() {
           <section className="space-y-3">
             {announcements.length ? (
               announcements.map((announcement) => {
-                const workspace = workspaceMap.get(announcement.workspace_id);
                 const author = authorMap.get(announcement.created_by);
                 const unread = !readIds.has(announcement.id);
 
@@ -201,7 +181,7 @@ export default async function AnnouncementsPage() {
                   >
                     <div className="flex gap-4">
                       <div className="relative flex size-11 shrink-0 items-center justify-center rounded-xl bg-zinc-950 text-sm font-semibold text-white">
-                        {workspace?.icon ?? "!"}
+                        {workspace.icon}
                         {unread ? (
                           <span className="absolute -right-1 -top-1 size-3 rounded-full bg-red-500 ring-2 ring-white" />
                         ) : null}
@@ -218,7 +198,7 @@ export default async function AnnouncementsPage() {
                           ) : null}
                         </div>
                         <p className="mt-1 text-sm text-zinc-500">
-                          {workspace?.name ?? "Workspace"} ·{" "}
+                          {workspace.name} ·{" "}
                           {author?.full_name ||
                             author?.username ||
                             author?.email ||

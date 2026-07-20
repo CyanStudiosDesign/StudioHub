@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getCoreWorkspace } from "@/lib/core-workspace";
 import { createClient } from "@/utils/supabase/action";
 import { readDocumentPayload } from "./document-utils";
 
@@ -20,6 +21,22 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "workspaceId is required" },
       { status: 400 },
+    );
+  }
+
+  const { workspace, setupError } = await getCoreWorkspace(supabase);
+
+  if (setupError || !workspace) {
+    return NextResponse.json(
+      { error: setupError ?? "Core workspace is not configured." },
+      { status: 500 },
+    );
+  }
+
+  if (workspaceId !== workspace.id) {
+    return NextResponse.json(
+      { error: "Documents can only be saved to the core workspace." },
+      { status: 403 },
     );
   }
 

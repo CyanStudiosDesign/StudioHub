@@ -2,6 +2,11 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import AppShell from "@/components/ui/sidebar/AppShell";
 import MarkdownEditor from "@/editor/MarkdownEditor";
+import {
+  getCoreMembership,
+  getCoreWorkspace,
+  SetupErrorScreen,
+} from "@/lib/core-workspace";
 import { createClient } from "@/utils/supabase/server";
 
 export const metadata: Metadata = {
@@ -28,19 +33,27 @@ export default async function EditorPage({ searchParams }: EditorPageProps) {
     redirect("/login");
   }
 
-  const { data: workspaces, error: workspacesError } = await supabase
-    .from("workspaces")
-    .select("id, name, slug, icon")
-    .order("updated_at", { ascending: false });
+  const { workspace, setupError } = await getCoreWorkspace(supabase);
 
-  if (workspacesError) {
-    throw new Error(workspacesError.message);
+  if (setupError || !workspace) {
+    return <SetupErrorScreen message={setupError ?? "Workspace missing."} />;
   }
+
+  const membership = await getCoreMembership(supabase, workspace.id, user.id);
+
+  if (!membership) {
+    redirect("/");
+  }
+
+  const workspaces = [workspace];
 
   if (!workspaceId && !docId) {
     return (
-      <AppShell>
-        <MarkdownEditor availableWorkspaces={workspaces ?? []} />
+      <AppShell workspaceId={workspace.id}>
+        <MarkdownEditor
+          workspaceId={workspace.id}
+          availableWorkspaces={workspaces}
+        />
       </AppShell>
     );
   }
@@ -60,6 +73,10 @@ export default async function EditorPage({ searchParams }: EditorPageProps) {
       notFound();
     }
 
+    if (document.workspace_id !== workspace.id) {
+      notFound();
+    }
+
     return (
       <AppShell workspaceId={document.workspace_id}>
         <MarkdownEditor
@@ -67,7 +84,7 @@ export default async function EditorPage({ searchParams }: EditorPageProps) {
           workspaceId={document.workspace_id}
           initialTitle={document.title}
           initialMarkdown={document.content_md}
-          availableWorkspaces={workspaces ?? []}
+          availableWorkspaces={workspaces}
         />
       </AppShell>
     );
@@ -77,25 +94,15 @@ export default async function EditorPage({ searchParams }: EditorPageProps) {
     notFound();
   }
 
-  const { data: workspace, error } = await supabase
-    .from("workspaces")
-    .select("id")
-    .eq("id", workspaceId)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  if (!workspace) {
-    notFound();
+  if (workspaceId !== workspace.id) {
+    redirect(`/editor?workspaceId=${workspace.id}`);
   }
 
   return (
     <AppShell workspaceId={workspace.id}>
       <MarkdownEditor
         workspaceId={workspace.id}
-        availableWorkspaces={workspaces ?? []}
+        availableWorkspaces={workspaces}
       />
     </AppShell>
   );

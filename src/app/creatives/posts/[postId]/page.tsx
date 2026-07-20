@@ -2,6 +2,11 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, CheckCircle2, FileText, Trash2 } from "lucide-react";
 import AppShell from "@/components/ui/sidebar/AppShell";
+import {
+  getCoreMembership,
+  getCoreWorkspace,
+  SetupErrorScreen,
+} from "@/lib/core-workspace";
 import { createClient } from "@/utils/supabase/server";
 import type { CreativeVersion, Profile } from "@/types/supabase";
 import {
@@ -102,6 +107,19 @@ export default async function CreativeDetailPage({
     redirect("/login");
   }
 
+  const { workspace: coreWorkspace, setupError } =
+    await getCoreWorkspace(supabase);
+
+  if (setupError || !coreWorkspace) {
+    return <SetupErrorScreen message={setupError ?? "Workspace missing."} />;
+  }
+
+  const membership = await getCoreMembership(supabase, coreWorkspace.id, user.id);
+
+  if (!membership) {
+    redirect("/");
+  }
+
   const { data: post, error: postError } = await supabase
     .from("creative_posts")
     .select(
@@ -115,6 +133,10 @@ export default async function CreativeDetailPage({
   }
 
   if (!post) {
+    notFound();
+  }
+
+  if (post.workspace_id !== coreWorkspace.id) {
     notFound();
   }
 
