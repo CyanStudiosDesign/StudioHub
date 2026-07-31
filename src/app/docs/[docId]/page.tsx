@@ -109,7 +109,7 @@ export default async function DocumentViewPage({ params }: DocumentViewPageProps
 
   const content = coerceTiptapDocument(document.content_json, document.content_md);
   const words = tiptapDocumentText(content).split(/\s+/).filter(Boolean).length;
-  const authorLabel = author?.full_name || author?.username || "Studio Hub author";
+  const authorLabel = author?.full_name || author?.username || "TuesdaySpace author";
   const backHref = document.visibility === "public"
     ? "/documents?tab=all"
     : document.visibility === "workspace"

@@ -53,7 +53,7 @@ export default function ProjectSettingsDialog({
           description="Update project details and control who can collaborate on this project."
         >
           <div className="space-y-8">
-            <div className="flex items-center justify-between rounded-2xl border border-border bg-canvas p-4"><div><h3 className="font-semibold">Appearance</h3><p className="mt-1 text-sm text-fg-muted">Use the dark Studio Hub theme.</p></div><ThemeToggle /></div>
+            <div className="flex items-center justify-between rounded-2xl border border-border bg-canvas p-4"><div><h3 className="font-semibold">Appearance</h3><p className="mt-1 text-sm text-fg-muted">Use the dark TuesdaySpace theme.</p></div><ThemeToggle /></div>
             <OptimisticForm action={updateProjectOverview} pendingMessage="Saving project…" successMessage="Project settings saved">
               <div>
                 <h3 className="font-semibold">Project details</h3>

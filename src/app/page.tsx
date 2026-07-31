@@ -137,7 +137,7 @@ function JoinWorkspaceScreen({
           {workspace.name}
         </h1>
         <p className="mx-auto mt-4 max-w-xl text-sm leading-6 text-zinc-600">
-          This Studio Hub is private. Request access and an administrator with
+          This TuesdaySpace workspace is private. Request access and an administrator with
           member-management permission can approve you.
         </p>
 
@@ -275,7 +275,7 @@ export default async function Home() {
               className="flex items-center gap-2 text-base font-semibold tracking-tight"
             >
               <Sparkles className="size-4" />
-              Studio Hub
+              TuesdaySpace
             </Link>
 
             <NotificationBell notifications={(announcements ?? []).map((announcement) => ({ id: announcement.id, title: announcement.title, message: announcement.message, createdAt: formatDate(announcement.created_at), unread: !readIds.has(announcement.id) }))} />

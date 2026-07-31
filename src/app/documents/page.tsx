@@ -124,13 +124,13 @@ export default async function DocumentsPage({ searchParams }: DocumentsPageProps
           <header className="flex flex-col gap-7 border-b border-border pb-8 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <Text variant="overline" className="tracking-[0.18em] text-fg-subtle">
-                Studio Hub Journal
+                TuesdaySpace Journal
               </Text>
               <Text variant="h1" className="mt-3 text-5xl font-semibold tracking-tight text-fg sm:text-6xl">
                 Ideas worth sharing.
               </Text>
               <p className="mt-4 max-w-2xl text-lg leading-8 text-fg-muted">
-                Read public stories from across Studio Hub or switch to your workspace’s private knowledge.
+                Read public stories from across TuesdaySpace or switch to your workspace’s private knowledge.
               </p>
             </div>
             <Link
@@ -166,7 +166,7 @@ export default async function DocumentsPage({ searchParams }: DocumentsPageProps
                       <h3 className="mt-5 text-2xl font-semibold leading-8 group-hover:underline">{document.title}</h3>
                       <p className="mt-2 line-clamp-2 text-sm leading-6 text-fg-muted">{articleExcerpt(document)}</p>
                       <p className="mt-4 text-xs font-medium text-fg-muted">
-                        {author?.full_name || author?.username || "Studio Hub author"}{" · "}{readTime(document)}{" · "}{formatDate(document.updated_at)}
+                        {author?.full_name || author?.username || "TuesdaySpace author"}{" · "}{readTime(document)}{" · "}{formatDate(document.updated_at)}
                       </p>
                     </Link>
                   );

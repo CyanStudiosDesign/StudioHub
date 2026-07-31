@@ -23,8 +23,8 @@ const satoshi = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Studio Hub",
-  description: "Markdown blog page generator",
+  title: "TuesdaySpace",
+  description: "A shared space for documents, projects, creative work, and team updates.",
 };
 
 export default function RootLayout({

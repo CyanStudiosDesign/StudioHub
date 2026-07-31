@@ -6,7 +6,7 @@ import { createClient } from "@/utils/supabase/server";
 import { authenticateWithEmail } from "./actions";
 
 export const metadata: Metadata = {
-  title: "Login | Studio Hub",
+  title: "Login | TuesdaySpace",
 };
 
 export default async function LoginPage() {

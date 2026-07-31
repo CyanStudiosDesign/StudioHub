@@ -94,7 +94,7 @@ export default function Sidebar({
         {!collapsed ? (
           <div className="flex items-center gap-2 text-sm font-semibold">
             <BookOpen className="size-4" />
-            Studio Hub
+            TuesdaySpace
           </div>
         ) : null}
         {!collapsed ? <ThemeToggle /> : null}

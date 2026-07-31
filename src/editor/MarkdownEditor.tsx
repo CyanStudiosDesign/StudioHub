@@ -717,7 +717,7 @@ export default function MarkdownEditor({
       <div className="sticky top-0 z-20 border-b border-border bg-canvas/90 backdrop-blur">
         <div className="flex w-full flex-wrap items-center justify-between gap-4 px-5 py-4 md:px-8">
           <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">Studio Hub</p>
+            <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">TuesdaySpace</p>
             <p className="mt-1 text-sm font-medium text-zinc-600">Document editor</p>
           </div>
 

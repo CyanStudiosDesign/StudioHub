@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
 
 export const metadata: Metadata = {
-  title: "Profiles | Studio Hub",
+  title: "Profiles | TuesdaySpace",
 };
 
 export default async function ProfilesPage() {
