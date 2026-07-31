@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import UploadDropzone from "./UploadDropzone";
+import { useToast } from "@/components/ui/toast";
 
 type VersionUploaderProps = {
   workspaceId: string;
@@ -28,6 +29,7 @@ export default function VersionUploader({
   postId,
 }: VersionUploaderProps) {
   const router = useRouter();
+  const toast = useToast();
   const [file, setFile] = useState<File | null>(null);
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +65,7 @@ export default function VersionUploader({
       });
 
     if (uploadError) {
+      toast({ message: "Upload failed", description: uploadError.message, variant: "error" });
       setProgress(0);
       setError(uploadError.message);
       return;
@@ -89,6 +92,7 @@ export default function VersionUploader({
     const result = (await response.json()) as { error?: string };
 
     if (!response.ok) {
+      toast({ message: "Upload failed", description: result.error ?? "Unable to save this version.", variant: "error" });
       setProgress(0);
       setError(result.error ?? "Unable to save this version.");
       return;
@@ -97,6 +101,7 @@ export default function VersionUploader({
     setProgress(100);
     setFile(null);
     setNotes("");
+    toast({ message: "Version uploaded", description: file.name });
     startTransition(() => router.refresh());
   }
 

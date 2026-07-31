@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import AppShell from "@/components/ui/sidebar/AppShell";
 import {
   getCoreMembership,
   getCoreWorkspace,
@@ -119,7 +118,7 @@ export default async function CreativesDashboardPage() {
   }
 
   return (
-    <AppShell workspaceId={workspace.id}>
+    <>
       <main className="min-h-screen px-6 py-10 text-zinc-950">
         <div className="mx-auto max-w-7xl">
           <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
@@ -195,6 +194,6 @@ export default async function CreativesDashboardPage() {
           )}
         </div>
       </main>
-    </AppShell>
+    </>
   );
 }

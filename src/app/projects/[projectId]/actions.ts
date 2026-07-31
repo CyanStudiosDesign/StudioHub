@@ -8,6 +8,17 @@ import type { Database } from "@/types/supabase";
 type TaskStatus = Database["public"]["Enums"]["project_task_status"];
 type TaskPriority = Database["public"]["Enums"]["project_task_priority"];
 
+const taskStatuses = new Set<TaskStatus>([
+  "backlog",
+  "todo",
+  "in_progress",
+  "blocked",
+  "in_review",
+  "completed",
+  "cancelled",
+]);
+const taskPriorities = new Set<TaskPriority>(["low", "medium", "high", "critical"]);
+
 async function requireUser() {
   const supabase = await createClient();
   const {
@@ -195,6 +206,23 @@ export async function createTask(formData: FormData) {
   if (error) throw new Error(error.message);
 
   if (assigneeId) {
+    const { data: workspaceMember, error: memberError } = await supabase
+      .from("workspace_members")
+      .select("user_id")
+      .eq("workspace_id", workspaceId)
+      .eq("user_id", assigneeId)
+      .maybeSingle();
+    if (memberError) throw new Error(memberError.message);
+    if (!workspaceMember) throw new Error("Tasks can only be assigned to workspace members.");
+
+    const { error: projectMemberError } = await supabase.from("project_members").upsert({
+      project_id: projectId,
+      user_id: assigneeId,
+      assigned_by: userId,
+      role: assigneeId === userId ? "member" : "contributor",
+    }, { onConflict: "project_id,user_id", ignoreDuplicates: true });
+    if (projectMemberError) throw new Error(projectMemberError.message);
+
     const { error: assigneeError } = await supabase
       .from("project_task_assignees")
       .insert({
@@ -271,6 +299,60 @@ export async function updateTaskStatus(formData: FormData) {
     actor_id: userId,
     type: status === "completed" ? "task_updated" : "status_changed",
     message: `Changed task status to ${status.replaceAll("_", " ")}.`,
+  });
+
+  revalidatePath(`/projects/${projectId}`);
+}
+
+export async function updateTaskFromTable(formData: FormData) {
+  const projectId = String(formData.get("projectId") ?? "");
+  const taskId = String(formData.get("taskId") ?? "");
+  const title = String(formData.get("title") ?? "").trim();
+  const status = String(formData.get("status") ?? "") as TaskStatus;
+  const priority = String(formData.get("priority") ?? "") as TaskPriority;
+  const dueDate = nullableDate(formData, "dueDate");
+
+  if (!projectId || !taskId || title.length < 2 || title.length > 240) {
+    throw new Error("Task title must be between 2 and 240 characters.");
+  }
+  if (!taskStatuses.has(status)) throw new Error("Select a valid task status.");
+  if (!taskPriorities.has(priority)) throw new Error("Select a valid priority.");
+
+  const { supabase, userId } = await requireProjectAccess(projectId);
+
+  if (status === "completed") {
+    const { data: dependencies, error: dependencyError } = await supabase
+      .from("project_task_dependencies")
+      .select("depends_on_task_id")
+      .eq("task_id", taskId);
+    if (dependencyError) throw new Error(dependencyError.message);
+
+    const dependencyIds = dependencies.map((item) => item.depends_on_task_id);
+    if (dependencyIds.length) {
+      const { data: requiredTasks, error: requiredError } = await supabase
+        .from("project_tasks")
+        .select("status")
+        .in("id", dependencyIds);
+      if (requiredError) throw new Error(requiredError.message);
+      if (requiredTasks.some((task) => task.status !== "completed" && task.status !== "cancelled")) {
+        throw new Error("Complete or cancel blocking dependencies before completing this task.");
+      }
+    }
+  }
+
+  const { error } = await supabase
+    .from("project_tasks")
+    .update({ title, status, priority, due_date: dueDate })
+    .eq("id", taskId)
+    .eq("project_id", projectId);
+  if (error) throw new Error(error.message);
+
+  await supabase.from("project_activity").insert({
+    project_id: projectId,
+    task_id: taskId,
+    actor_id: userId,
+    type: "task_updated",
+    message: `Updated task "${title}" from the task table.`,
   });
 
   revalidatePath(`/projects/${projectId}`);

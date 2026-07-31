@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { ProjectAttachment } from "@/types/supabase";
 import { createClient } from "@/utils/supabase/client";
+import { useToast } from "@/components/ui/toast";
 
 const acceptedTypes = [
   "image/png",
@@ -30,6 +31,7 @@ export default function TaskAttachments({
   attachments: ProjectAttachment[];
 }) {
   const router = useRouter();
+  const toast = useToast();
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
@@ -53,6 +55,7 @@ export default function TaskAttachments({
       });
 
     if (uploadError) {
+      toast({ message: "Upload failed", description: uploadError.message, variant: "error" });
       setError(uploadError.message);
       setProgress(0);
       return;
@@ -77,6 +80,7 @@ export default function TaskAttachments({
     const result = (await response.json()) as { error?: string };
 
     if (!response.ok) {
+      toast({ message: "Upload failed", description: result.error ?? "Unable to save attachment.", variant: "error" });
       setError(result.error ?? "Unable to save attachment.");
       setProgress(0);
       return;
@@ -84,6 +88,7 @@ export default function TaskAttachments({
 
     setProgress(100);
     setFile(null);
+    toast({ message: "File uploaded", description: file.name });
     startTransition(() => router.refresh());
   }
 

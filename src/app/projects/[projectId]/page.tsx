@@ -1,5 +1,4 @@
 import { notFound, redirect } from "next/navigation";
-import AppShell from "@/components/ui/sidebar/AppShell";
 import {
   getCoreMembership,
   getCoreWorkspace,
@@ -14,12 +13,19 @@ import type {
 } from "@/types/supabase";
 import {
   addFinancialEntry,
-  addProjectMember,
   createGoal,
   createTask,
-  updateProjectOverview,
   updateTaskStatus,
 } from "./actions";
+import { Tabs } from "@/components/blocks/tabs/Tabs";
+import { TabsContent } from "@/components/blocks/tabs/TabsContent";
+import { TabsList } from "@/components/blocks/tabs/TabsList";
+import { TabsTrigger } from "@/components/blocks/tabs/TabsTrigger";
+import {
+  OptimisticForm,
+  OptimisticSubmitButton,
+} from "@/components/ui/forms/OptimisticForm";
+import { Select, SelectGroup, SelectItem } from "@/components/ui/select";
 import ActivityTimeline from "./_components/ActivityTimeline";
 import CalendarView from "./_components/CalendarView";
 import CostBreakdown from "./_components/CostBreakdown";
@@ -30,6 +36,7 @@ import KanbanBoard from "./_components/KanbanBoard";
 import MemberList from "./_components/MemberList";
 import ProjectHeader from "./_components/ProjectHeader";
 import ProjectProgress from "./_components/ProjectProgress";
+import ProjectSettingsDialog from "./_components/ProjectSettingsDialog";
 import ProjectStats from "./_components/ProjectStats";
 import StatusBadge from "./_components/StatusBadge";
 import SubtaskChecklist from "./_components/SubtaskChecklist";
@@ -295,131 +302,86 @@ export default async function ProjectDashboardPage({
     filteredTasks.find((task) => task.id === filters.task) ?? filteredTasks[0];
 
   return (
-    <AppShell workspaceId={project.workspace_id}>
-      <main className="min-h-screen px-6 py-10 text-zinc-950">
+    <>
+      <main className="min-h-screen bg-canvas px-6 py-10 text-fg">
         <div className="mx-auto max-w-7xl space-y-6">
           <ProjectHeader project={project} />
 
-          <nav className="flex flex-wrap gap-2 border-b border-zinc-200 pb-3 text-sm font-medium">
-            {["Overview", "Tasks", "Goals", "Members", "Activity", "Financials", "Settings"].map((item) => (
-              <a
-                key={item}
-                href={`#${item.toLowerCase()}`}
-                className="rounded-full bg-white px-3 py-1.5 text-zinc-600 ring-1 ring-zinc-200 hover:text-zinc-950"
-              >
-                {item}
-              </a>
-            ))}
-          </nav>
+          <Tabs defaultValue="overview">
+            <div className="flex flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">
+              <TabsList className="mb-0 h-auto max-w-full justify-start gap-1 overflow-x-auto rounded-xl border border-border bg-surface p-1.5">
+                <TabsTrigger value="overview" className="rounded-lg px-4">Overview</TabsTrigger>
+                <TabsTrigger value="tasks" className="rounded-lg px-4">Tasks</TabsTrigger>
+                <TabsTrigger value="goals" className="rounded-lg px-4">Goals</TabsTrigger>
+                <TabsTrigger value="team" className="rounded-lg px-4">Team</TabsTrigger>
+                <TabsTrigger value="activity" className="rounded-lg px-4">Activity</TabsTrigger>
+                {canViewFinancials ? (
+                  <TabsTrigger value="financials" className="rounded-lg px-4">Financials</TabsTrigger>
+                ) : null}
+              </TabsList>
+              <ProjectSettingsDialog
+                project={project}
+                canManage={Boolean(canManage)}
+                assignableMembers={assignableWorkspaceMembers.map((member) => ({
+                  id: member.user_id,
+                  label: name(profilesById.get(member.user_id)),
+                }))}
+              />
+            </div>
 
-          <section id="overview" className="grid gap-6 xl:grid-cols-[1fr_360px]">
-            <div className="space-y-6">
+            <TabsContent value="overview" className="space-y-6">
               <ProjectStats tasks={tasks as ProjectTask[]} />
-              <ProjectProgress
-                taskProgress={percent(completedTasks, tasks.length)}
-                goalProgress={percent(completedGoals, goals.length)}
-                completedTasks={completedTasks}
-                totalTasks={tasks.length}
-                completedGoals={completedGoals}
-                totalGoals={goals.length}
-              />
-            </div>
-            <div className="space-y-6">
-              <MemberList
-                members={projectMembers}
-                tasks={tasks as ProjectTask[]}
-                assignees={taskAssignees as ProjectTaskAssignee[]}
-                profilesById={profilesById}
-              />
-              <ActivityTimeline activities={activities} profilesById={profilesById} />
-            </div>
-          </section>
-
-          <section id="settings" className="grid gap-6 xl:grid-cols-2">
-            <form
-              action={updateProjectOverview}
-              className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
-            >
-              <h2 className="text-lg font-semibold tracking-tight">
-                Project settings
-              </h2>
-              <input type="hidden" name="projectId" value={project.id} />
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <input
-                  name="name"
-                  defaultValue={project.name}
-                  className="h-11 rounded-xl border border-zinc-200 px-3 text-sm outline-none focus:border-zinc-950"
-                />
-                <input
-                  name="clientName"
-                  defaultValue={project.client_name ?? ""}
-                  placeholder="Client name"
-                  className="h-11 rounded-xl border border-zinc-200 px-3 text-sm outline-none focus:border-zinc-950"
-                />
-                <input
-                  name="estimatedDeadline"
-                  type="date"
-                  defaultValue={project.estimated_deadline ?? ""}
-                  className="h-11 rounded-xl border border-zinc-200 px-3 text-sm outline-none focus:border-zinc-950"
-                />
-                <textarea
-                  name="description"
-                  defaultValue={project.description ?? ""}
-                  placeholder="Project description"
-                  className="min-h-24 rounded-xl border border-zinc-200 px-3 py-3 text-sm outline-none focus:border-zinc-950 sm:col-span-2"
+              <div className="grid gap-6 xl:grid-cols-3">
+                <section className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-fg-subtle">Milestones</p>
+                      <h2 className="mt-1 text-lg font-semibold tracking-tight">Goals</h2>
+                    </div>
+                    <span className="rounded-full bg-subtle px-3 py-1 text-xs font-semibold text-fg-muted">
+                      {completedGoals}/{goals.length} complete
+                    </span>
+                  </div>
+                  <div className="mt-5 space-y-3">
+                    {goals.length ? goals.slice(0, 3).map((goal) => (
+                      <GoalCard
+                        key={goal.id}
+                        goal={goal}
+                        tasks={tasks.filter((task) => task.goal_id === goal.id) as ProjectTask[]}
+                      />
+                    )) : (
+                      <p className="rounded-xl border border-dashed border-border p-5 text-sm text-fg-muted">No project goals yet.</p>
+                    )}
+                  </div>
+                </section>
+                {canViewFinancials ? (
+                  <FinancialSummary entries={financialEntries} />
+                ) : (
+                  <section className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
+                    <h2 className="text-lg font-semibold tracking-tight">Financial overview</h2>
+                    <p className="mt-3 text-sm leading-6 text-fg-muted">Financial data is limited to authorized project members.</p>
+                  </section>
+                )}
+                <ProjectProgress
+                  taskProgress={percent(completedTasks, tasks.length)}
+                  goalProgress={percent(completedGoals, goals.length)}
+                  completedTasks={completedTasks}
+                  totalTasks={tasks.length}
+                  completedGoals={completedGoals}
+                  totalGoals={goals.length}
                 />
               </div>
-              <button
-                disabled={!canManage}
-                className="mt-4 h-10 rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Save project
-              </button>
-            </form>
+            </TabsContent>
 
-            <form
-              action={addProjectMember}
-              className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
-            >
-              <h2 className="text-lg font-semibold tracking-tight">
-                Add project member
-              </h2>
-              <input type="hidden" name="projectId" value={project.id} />
-              <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_160px_auto]">
-                <select
-                  name="userId"
-                  required
-                  disabled={!assignableWorkspaceMembers.length}
-                  className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-950"
-                >
-                  <option value="">Workspace member</option>
-                  {assignableWorkspaceMembers.map((member) => (
-                    <option key={member.user_id} value={member.user_id}>
-                      {name(profilesById.get(member.user_id))}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  name="role"
-                  placeholder="Project role"
-                  className="h-11 rounded-xl border border-zinc-200 px-3 text-sm outline-none focus:border-zinc-950"
-                />
-                <button
-                  disabled={!canManage || !assignableWorkspaceMembers.length}
-                  className="h-11 rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Add
-                </button>
-              </div>
-            </form>
-          </section>
-
-          <section id="goals" className="space-y-4">
+            <TabsContent value="goals">
+          <section className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-semibold tracking-tight">Goals</h2>
             </div>
-            <form
+            <OptimisticForm
               action={createGoal}
+              pendingMessage="Creating goal…"
+              resetOnSubmit
               className="grid gap-3 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm md:grid-cols-[1fr_1fr_160px_auto]"
             >
               <input type="hidden" name="projectId" value={project.id} />
@@ -440,13 +402,14 @@ export default async function ProjectDashboardPage({
                 type="date"
                 className="h-11 rounded-xl border border-zinc-200 px-3 text-sm outline-none focus:border-zinc-950"
               />
-              <button
+              <OptimisticSubmitButton
                 disabled={!canManage}
+                pendingLabel="Creating…"
                 className="h-11 rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Create goal
-              </button>
-            </form>
+              </OptimisticSubmitButton>
+            </OptimisticForm>
             {goals.length ? (
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {goals.map((goal) => (
@@ -461,8 +424,10 @@ export default async function ProjectDashboardPage({
               <EmptyState title="No goals yet" description="Create project milestones to group tasks and measure launch progress." />
             )}
           </section>
+            </TabsContent>
 
-          <section id="tasks" className="space-y-5">
+            <TabsContent value="tasks" className="space-y-6">
+          <section className="space-y-5">
             <h2 className="text-2xl font-semibold tracking-tight">Tasks</h2>
             <form className="grid gap-3 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm md:grid-cols-[1fr_160px_160px_180px_auto]">
               <input
@@ -471,59 +436,47 @@ export default async function ProjectDashboardPage({
                 placeholder="Search task title or description"
                 className="h-11 rounded-xl border border-zinc-200 px-3 text-sm outline-none focus:border-zinc-950"
               />
-              <select name="status" defaultValue={filters.status ?? ""} className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm">
-                <option value="">All statuses</option>
-                {taskStatuses.map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}
-              </select>
-              <select name="priority" defaultValue={filters.priority ?? ""} className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm">
-                <option value="">All priorities</option>
-                {priorities.map((priority) => <option key={priority} value={priority}>{priority}</option>)}
-              </select>
-              <select name="goal" defaultValue={filters.goal ?? ""} className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm">
-                <option value="">All goals</option>
-                {goals.map((goal) => <option key={goal.id} value={goal.id}>{goal.name}</option>)}
-              </select>
+              <Select name="status" title="All statuses" defaultValue={filters.status ?? ""}><SelectGroup><SelectItem value="">All statuses</SelectItem>{taskStatuses.map((status) => <SelectItem key={status} value={status}>{status.replaceAll("_", " ")}</SelectItem>)}</SelectGroup></Select>
+              <Select name="priority" title="All priorities" defaultValue={filters.priority ?? ""}><SelectGroup><SelectItem value="">All priorities</SelectItem>{priorities.map((priority) => <SelectItem key={priority} value={priority}>{priority}</SelectItem>)}</SelectGroup></Select>
+              <Select name="goal" title="All goals" defaultValue={filters.goal ?? ""}><SelectGroup><SelectItem value="">All goals</SelectItem>{goals.map((goal) => <SelectItem key={goal.id} value={goal.id}>{goal.name}</SelectItem>)}</SelectGroup></Select>
               <button className="h-11 rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white hover:bg-zinc-800">
                 Filter
               </button>
             </form>
 
-            <form
+            <OptimisticForm
               action={createTask}
+              pendingMessage="Creating task…"
+              successMessage="Task created"
+              resetOnSubmit
               className="grid gap-3 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm lg:grid-cols-[1fr_1fr_150px_150px_170px_auto]"
             >
               <input type="hidden" name="projectId" value={project.id} />
               <input type="hidden" name="workspaceId" value={project.workspace_id} />
               <input name="title" required placeholder="Task title" className="h-11 rounded-xl border border-zinc-200 px-3 text-sm" />
               <input name="description" placeholder="Description" className="h-11 rounded-xl border border-zinc-200 px-3 text-sm" />
-              <select name="priority" defaultValue="medium" className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm">
-                {priorities.map((priority) => <option key={priority} value={priority}>{priority}</option>)}
-              </select>
-              <select name="goalId" className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm">
-                <option value="">No goal</option>
-                {goals.map((goal) => <option key={goal.id} value={goal.id}>{goal.name}</option>)}
-              </select>
-              <select name="assigneeId" className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm">
-                <option value="">No assignee</option>
-                {projectMembers.map((member) => <option key={member.user_id} value={member.user_id}>{name(profilesById.get(member.user_id))}</option>)}
-              </select>
-              <button className="h-11 rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white hover:bg-zinc-800">
+              <Select name="priority" title="Priority" defaultValue="medium"><SelectGroup>{priorities.map((priority) => <SelectItem key={priority} value={priority}>{priority}</SelectItem>)}</SelectGroup></Select>
+              <Select name="goalId" title="No goal"><SelectGroup><SelectItem value="">No goal</SelectItem>{goals.map((goal) => <SelectItem key={goal.id} value={goal.id}>{goal.name}</SelectItem>)}</SelectGroup></Select>
+              <Select name="assigneeId" title="No assignee"><SelectGroup title="Workspace members"><SelectItem value="">No assignee</SelectItem>{workspaceMembers.map((member) => <SelectItem key={member.user_id} value={member.user_id}>{member.user_id === user.id ? `${name(profilesById.get(member.user_id))} (you)` : name(profilesById.get(member.user_id))}</SelectItem>)}</SelectGroup></Select>
+              <OptimisticSubmitButton pendingLabel="Creating…" className="h-11 rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white hover:bg-zinc-800">
                 Create task
-              </button>
-            </form>
+              </OptimisticSubmitButton>
+            </OptimisticForm>
 
             {filteredTasks.length ? (
               <>
                 <KanbanBoard
+                  projectId={project.id}
                   tasks={filteredTasks as ProjectTask[]}
                   assignees={taskAssignees as ProjectTaskAssignee[]}
                   subtasks={subtasks}
-                  profilesById={profilesById}
+                  profiles={profiles}
                 />
                 <TaskTable
+                  projectId={project.id}
                   tasks={filteredTasks as ProjectTask[]}
                   assignees={taskAssignees as ProjectTaskAssignee[]}
-                  profilesById={profilesById}
+                  profiles={profiles}
                 />
               </>
             ) : (
@@ -548,16 +501,14 @@ export default async function ProjectDashboardPage({
                     </div>
                     <StatusBadge status={selectedTask.status} />
                   </div>
-                  <form action={updateTaskStatus} className="mt-4 flex gap-2">
+                  <OptimisticForm action={updateTaskStatus} pendingMessage="Updating status…" className="mt-4 flex gap-2">
                     <input type="hidden" name="projectId" value={project.id} />
                     <input type="hidden" name="taskId" value={selectedTask.id} />
-                    <select name="status" defaultValue={selectedTask.status} className="h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm">
-                      {taskStatuses.map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}
-                    </select>
-                    <button className="h-10 rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white hover:bg-zinc-800">
+                    <Select name="status" title="Status" defaultValue={selectedTask.status} className="max-w-52"><SelectGroup>{taskStatuses.map((status) => <SelectItem key={status} value={status}>{status.replaceAll("_", " ")}</SelectItem>)}</SelectGroup></Select>
+                    <OptimisticSubmitButton pendingLabel="Updating…" className="h-10 rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white hover:bg-zinc-800">
                       Update status
-                    </button>
-                  </form>
+                    </OptimisticSubmitButton>
+                  </OptimisticForm>
                 </div>
                 <TimelineView tasks={tasks as ProjectTask[]} />
                 <CalendarView tasks={tasks as ProjectTask[]} />
@@ -585,15 +536,40 @@ export default async function ProjectDashboardPage({
               </div>
             </section>
           ) : null}
+            </TabsContent>
+
+            <TabsContent value="team">
+              <div className="grid gap-6 xl:grid-cols-[1fr_1.2fr]">
+                <MemberList
+                  members={projectMembers}
+                  tasks={tasks as ProjectTask[]}
+                  assignees={taskAssignees as ProjectTaskAssignee[]}
+                  profilesById={profilesById}
+                />
+                <WorkloadView
+                  projectMembers={projectMembers.map((member) => member.user_id)}
+                  tasks={tasks as ProjectTask[]}
+                  assignees={taskAssignees as ProjectTaskAssignee[]}
+                  profilesById={profilesById}
+                />
+              </div>
+            </TabsContent>
+
+            <TabsContent value="activity">
+              <ActivityTimeline activities={activities} profilesById={profilesById} />
+            </TabsContent>
 
           {canViewFinancials ? (
-            <section id="financials" className="grid gap-6 xl:grid-cols-[1fr_360px]">
+            <TabsContent value="financials">
+            <section className="grid gap-6 xl:grid-cols-[1fr_360px]">
               <div className="space-y-6">
                 <FinancialSummary entries={financialEntries} />
                 <CostBreakdown entries={financialEntries} />
               </div>
-              <form
+              <OptimisticForm
                 action={addFinancialEntry}
+                pendingMessage="Saving entry…"
+                resetOnSubmit
                 className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
               >
                 <h2 className="text-lg font-semibold tracking-tight">
@@ -610,15 +586,17 @@ export default async function ProjectDashboardPage({
                     Revenue entry
                   </label>
                   <textarea name="notes" placeholder="Notes" className="min-h-24 w-full resize-none rounded-xl border border-zinc-200 px-3 py-3 text-sm" />
-                  <button className="h-11 w-full rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white hover:bg-zinc-800">
+                  <OptimisticSubmitButton pendingLabel="Saving…" className="h-11 w-full rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white hover:bg-zinc-800">
                     Save entry
-                  </button>
+                  </OptimisticSubmitButton>
                 </div>
-              </form>
+              </OptimisticForm>
             </section>
+            </TabsContent>
           ) : null}
+          </Tabs>
         </div>
       </main>
-    </AppShell>
+    </>
   );
 }

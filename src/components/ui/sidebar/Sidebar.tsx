@@ -5,15 +5,18 @@ import { usePathname } from "next/navigation";
 import {
   BookOpen,
   Bell,
-  FilePlus,
   FileText,
   Home,
   LayoutDashboard,
   LogOut,
   Megaphone,
   PanelLeft,
+  UserRound,
 } from "lucide-react";
 import { useSidebar } from "@/components/ui/provider/SidebarProvider";
+import { Button } from "@/components/ui/buttons/Buttons";
+import { Separator } from "@/components/ui/separator/Separator";
+import { ThemeToggle } from "@/components/ui/theme/ThemeToggle";
 import { cn } from "@/lib/utils";
 
 type SidebarProps = {
@@ -38,6 +41,10 @@ function isNavItemActive(
   if (item.label === "Workspace") {
     return /^\/workspaces\/[^/]+($|\/settings$)/.test(pathname);
   }
+  if (item.label === "Documents") return pathname === "/documents";
+  if (item.label === "My articles") {
+    return pathname.startsWith("/documents/mine") || pathname === "/editor";
+  }
 
   return pathname === href || pathname.startsWith(`${href}/`);
 }
@@ -49,9 +56,6 @@ export default function Sidebar({
 }: SidebarProps) {
   const { collapsed, toggleSidebar } = useSidebar();
   const pathname = usePathname();
-  const createDocumentHref = workspaceId
-    ? `/editor?workspaceId=${workspaceId}`
-    : "/editor";
   const projectsHref = workspaceId
     ? `/workspaces/${workspaceId}/projects`
     : "/workspaces";
@@ -66,25 +70,26 @@ export default function Sidebar({
       hasDot: hasUnreadAnnouncements,
     },
     { href: "/creatives", label: "Creatives", icon: Megaphone },
-    { href: createDocumentHref, label: "Create document", icon: FilePlus },
+    { href: "/documents/mine", label: "My articles", icon: UserRound },
   ];
 
   return (
     <aside
       className={cn(
-        "sticky top-0 flex h-screen shrink-0 flex-col border-r border-zinc-200 bg-white text-zinc-950 transition-all duration-200",
+        "sticky top-0 flex h-screen shrink-0 flex-col border-r border-border bg-surface text-fg transition-all duration-200",
         collapsed ? "w-16" : "w-64",
       )}
     >
-      <div className="flex h-16 items-center justify-between border-b border-zinc-200 px-3">
-        <button
-          type="button"
+      <div className="flex h-16 items-center justify-between px-3">
+        <Button
+          variant="outline"
+          size="icon"
           onClick={toggleSidebar}
-          className="flex size-10 items-center justify-center rounded-xl border border-zinc-200 text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-950"
+          className="rounded-xl"
           aria-label="Toggle sidebar"
         >
           <PanelLeft className="size-5" />
-        </button>
+        </Button>
 
         {!collapsed ? (
           <div className="flex items-center gap-2 text-sm font-semibold">
@@ -92,7 +97,9 @@ export default function Sidebar({
             Studio Hub
           </div>
         ) : null}
+        {!collapsed ? <ThemeToggle /> : null}
       </div>
+      <Separator />
 
       <nav className="flex-1 space-y-1 px-3 py-4">
         {navItems.map((item) => {
@@ -107,8 +114,8 @@ export default function Sidebar({
               className={cn(
                 baseLinkClass,
                 isActive
-                  ? "bg-zinc-950 text-white"
-                  : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950",
+                  ? "bg-gradient-to-r from-primary to-[#066555] text-primary-fg shadow-[0_0_26px_color-mix(in_srgb,var(--primary)_24%,transparent)]"
+                  : "text-fg-muted hover:bg-subtle hover:text-fg",
                 collapsed && "justify-center px-0",
               )}
             >
@@ -124,20 +131,23 @@ export default function Sidebar({
         })}
       </nav>
 
-      <div className="border-t border-zinc-200 p-3">
+      <Separator />
+      <div className="p-3">
+        {collapsed ? <div className="mb-2 flex justify-center"><ThemeToggle /></div> : null}
         <form action={logoutAction}>
-          <button
+          <Button
             type="submit"
+            variant="ghost"
             title={collapsed ? "Logout" : undefined}
             className={cn(
               baseLinkClass,
-              "w-full text-zinc-600 hover:bg-red-50 hover:text-red-700",
+              "w-full text-fg-muted hover:bg-danger-subtle hover:text-danger-strong",
               collapsed && "justify-center px-0",
             )}
           >
             <LogOut className="size-5 shrink-0" />
             {!collapsed ? <span>Logout</span> : null}
-          </button>
+          </Button>
         </form>
       </div>
     </aside>

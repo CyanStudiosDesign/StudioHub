@@ -10,8 +10,8 @@ import {
   Megaphone,
   Sparkles,
 } from "lucide-react";
+import { NotificationBell } from "@/components/ui/notifications/NotificationBell";
 import { requestCoreWorkspaceAccess } from "@/app/workspaces/core-actions";
-import AppShell from "@/components/ui/sidebar/AppShell";
 import {
   getCoreMembership,
   getCoreWorkspace,
@@ -125,7 +125,7 @@ function JoinWorkspaceScreen({
   const isPending = joinStatus === "pending";
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#f6f7fb] px-6 py-12 text-zinc-950">
+    <main className="app-theme flex min-h-screen items-center justify-center bg-canvas px-6 py-12 text-fg">
       <section className="w-full max-w-3xl rounded-3xl border border-zinc-200 bg-white p-8 text-center shadow-sm">
         <div className="mx-auto flex size-16 items-center justify-center rounded-2xl bg-zinc-950 text-2xl font-semibold text-white">
           {workspace.icon}
@@ -214,12 +214,30 @@ export default async function Home() {
     .order("updated_at", { ascending: false })
     .limit(5);
 
-  const { data: projects } = await supabase
+  const { data: allProjects } = await supabase
     .from("projects")
-    .select("id, workspace_id, name, status, updated_at")
+    .select("id, workspace_id, created_by, name, status, updated_at")
     .eq("workspace_id", workspaceId)
     .order("updated_at", { ascending: false })
-    .limit(5);
+    .limit(100);
+
+  const { data: projectMemberships } = await supabase
+    .from("project_members")
+    .select("project_id, role")
+    .eq("user_id", user.id);
+  const membershipByProject = new Map((projectMemberships ?? []).map((item) => [item.project_id, item.role]));
+  const projects = (allProjects ?? []).filter((project) => project.created_by === user.id || membershipByProject.has(project.id));
+
+  const { data: assignedTaskRows } = await supabase
+    .from("project_task_assignees")
+    .select("task_id")
+    .eq("user_id", user.id)
+    .limit(200);
+  const assignedTaskIds = (assignedTaskRows ?? []).map((row) => row.task_id);
+  const { data: assignedTasks } = assignedTaskIds.length
+    ? await supabase.from("project_tasks").select("id, project_id, title, status, priority, due_date, updated_at").in("id", assignedTaskIds).order("updated_at", { ascending: false }).limit(100)
+    : { data: [] };
+  const projectById = new Map((allProjects ?? []).map((project) => [project.id, project]));
 
   const { data: creativeCampaigns } = await supabase
     .from("creative_campaigns")
@@ -248,7 +266,7 @@ export default async function Home() {
   const hasUnreadAnnouncements = announcementIds.some((id) => !readIds.has(id));
 
   return (
-    <AppShell workspaceId={workspaceId}>
+    <>
       <main className="min-h-screen px-6 py-10 text-zinc-950">
         <div className="mx-auto max-w-7xl space-y-6">
           <nav className="flex items-center justify-between rounded-2xl border border-zinc-200 bg-white px-4 py-3 shadow-sm">
@@ -260,16 +278,7 @@ export default async function Home() {
               Studio Hub
             </Link>
 
-            <Link
-              href="/announcements"
-              aria-label="Announcements"
-              className="relative inline-flex size-10 items-center justify-center rounded-xl border border-zinc-200 text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-950"
-            >
-              <Bell className="size-5" />
-              {hasUnreadAnnouncements ? (
-                <span className="absolute -right-1 -top-1 size-3 rounded-full bg-red-500 ring-2 ring-white" />
-              ) : null}
-            </Link>
+            <NotificationBell notifications={(announcements ?? []).map((announcement) => ({ id: announcement.id, title: announcement.title, message: announcement.message, createdAt: formatDate(announcement.created_at), unread: !readIds.has(announcement.id) }))} />
           </nav>
 
           <section className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
@@ -322,6 +331,17 @@ export default async function Home() {
               value={creativeCampaigns?.length ?? 0}
               detail={`${creativeCampaigns?.filter((campaign) => campaign.status === "active").length ?? 0} active campaigns`}
             />
+          </section>
+
+          <section className="grid gap-6 xl:grid-cols-2">
+            <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
+              <div className="flex items-center justify-between px-5 py-4"><div><h2 className="text-lg font-semibold">Tasks assigned to you</h2><p className="text-sm text-fg-muted">Your work across every project.</p></div><span className="rounded-full bg-subtle px-2.5 py-1 text-xs font-semibold text-fg-muted">{assignedTasks?.length ?? 0}</span></div>
+              <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="border-y border-border bg-subtle/60 text-xs uppercase tracking-wide text-fg-muted"><tr><th className="px-5 py-3">Task</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Priority</th><th className="px-4 py-3">Due</th></tr></thead><tbody className="divide-y divide-border">{assignedTasks?.length ? assignedTasks.map((task) => <tr key={task.id} className="hover:bg-subtle/50"><td className="px-5 py-3"><Link href={`/projects/${task.project_id}?task=${task.id}`} className="font-semibold hover:text-primary">{task.title}</Link><p className="text-xs text-fg-muted">{projectById.get(task.project_id)?.name ?? "Project"}</p></td><td className="px-4 py-3 capitalize">{task.status.replaceAll("_", " ")}</td><td className="px-4 py-3 capitalize">{task.priority}</td><td className="whitespace-nowrap px-4 py-3 text-fg-muted">{task.due_date ? new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(task.due_date)) : "—"}</td></tr>) : <tr><td colSpan={4} className="px-5 py-8 text-center text-fg-muted">No tasks are assigned to you yet.</td></tr>}</tbody></table></div>
+            </div>
+            <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
+              <div className="flex items-center justify-between px-5 py-4"><div><h2 className="text-lg font-semibold">Your projects</h2><p className="text-sm text-fg-muted">Projects you created or joined.</p></div><span className="rounded-full bg-subtle px-2.5 py-1 text-xs font-semibold text-fg-muted">{projects.length}</span></div>
+              <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="border-y border-border bg-subtle/60 text-xs uppercase tracking-wide text-fg-muted"><tr><th className="px-5 py-3">Project</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Role</th><th className="px-4 py-3">Updated</th></tr></thead><tbody className="divide-y divide-border">{projects.length ? projects.map((project) => <tr key={project.id} className="hover:bg-subtle/50"><td className="px-5 py-3"><Link href={`/projects/${project.id}`} className="font-semibold hover:text-primary">{project.name}</Link></td><td className="px-4 py-3 capitalize">{project.status}</td><td className="px-4 py-3 capitalize text-fg-muted">{project.created_by === user.id ? "Owner" : membershipByProject.get(project.id) ?? "Member"}</td><td className="whitespace-nowrap px-4 py-3 text-fg-muted">{formatDate(project.updated_at)}</td></tr>) : <tr><td colSpan={4} className="px-5 py-8 text-center text-fg-muted">You are not part of a project yet.</td></tr>}</tbody></table></div>
+            </div>
           </section>
 
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -510,6 +530,6 @@ export default async function Home() {
           </section>
         </div>
       </main>
-    </AppShell>
+    </>
   );
 }

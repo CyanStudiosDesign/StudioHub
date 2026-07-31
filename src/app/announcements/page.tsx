@@ -1,6 +1,5 @@
 import { Megaphone } from "lucide-react";
 import { redirect } from "next/navigation";
-import AppShell from "@/components/ui/sidebar/AppShell";
 import {
   getCoreMembership,
   getCoreWorkspace,
@@ -8,6 +7,7 @@ import {
 } from "@/lib/core-workspace";
 import { createClient } from "@/utils/supabase/server";
 import { createAnnouncement, markAnnouncementsRead } from "./actions";
+import { OptimisticForm, OptimisticSubmitButton } from "@/components/ui/forms/OptimisticForm";
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en", {
@@ -87,7 +87,7 @@ export default async function AnnouncementsPage() {
     membership.role === "owner" || membership.role === "admin";
 
   return (
-    <AppShell workspaceId={workspace.id}>
+    <>
       <main className="min-h-screen px-6 py-10 text-zinc-950">
         <div className="mx-auto max-w-5xl space-y-6">
           <section className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
@@ -135,8 +135,11 @@ export default async function AnnouncementsPage() {
           </section>
 
           {canPost ? (
-            <form
+            <OptimisticForm
               action={createAnnouncement}
+              pendingMessage="Posting announcement…"
+              successMessage="Announcement posted"
+              resetOnSubmit
               className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
             >
               <h2 className="text-lg font-semibold tracking-tight">
@@ -162,10 +165,10 @@ export default async function AnnouncementsPage() {
                   className="min-h-28 resize-none rounded-xl border border-zinc-200 px-3 py-3 text-sm outline-none focus:border-zinc-950 md:col-span-2"
                 />
               </div>
-              <button className="mt-4 h-11 rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white hover:bg-zinc-800">
+              <OptimisticSubmitButton pendingLabel="Posting…" className="mt-4 h-11 rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white hover:bg-zinc-800">
                 Post announcement
-              </button>
-            </form>
+              </OptimisticSubmitButton>
+            </OptimisticForm>
           ) : null}
 
           <section className="space-y-3">
@@ -226,6 +229,6 @@ export default async function AnnouncementsPage() {
           </section>
         </div>
       </main>
-    </AppShell>
+    </>
   );
 }

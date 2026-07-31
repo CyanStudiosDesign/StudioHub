@@ -517,8 +517,10 @@ export type Database = {
           workspace_id: string;
           author_id: string;
           title: string;
+          content_json: Json | null;
           content_md: string;
           folder_path: string;
+          visibility: "public" | "private" | "workspace";
           created_at: string;
           updated_at: string | null;
         };
@@ -527,8 +529,10 @@ export type Database = {
           workspace_id: string;
           author_id: string;
           title?: string;
+          content_json?: Json | null;
           content_md?: string;
           folder_path?: string;
+          visibility?: "public" | "private" | "workspace";
           created_at?: string;
           updated_at?: string | null;
         };
@@ -537,8 +541,10 @@ export type Database = {
           workspace_id?: string;
           author_id?: string;
           title?: string;
+          content_json?: Json | null;
           content_md?: string;
           folder_path?: string;
+          visibility?: "public" | "private" | "workspace";
           created_at?: string;
           updated_at?: string | null;
         };

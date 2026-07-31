@@ -25,7 +25,7 @@ export default function FinancialSummary({
   return (
     <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
       <h2 className="text-lg font-semibold tracking-tight text-zinc-950">
-        Financials
+        Financial overview
       </h2>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         {[

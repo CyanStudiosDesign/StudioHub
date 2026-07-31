@@ -175,7 +175,7 @@ export function InlineMarkdown({ text }: { text: string }) {
       return (
         <code
           key={index}
-          className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-sm text-zinc-900"
+          className="rounded bg-zinc-100 px-1.5 py-0.5 font-sans text-sm text-zinc-900"
         >
           {token.value}
         </code>

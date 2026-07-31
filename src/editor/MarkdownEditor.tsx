@@ -1,36 +1,64 @@
 "use client";
 
+import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
+import { common, createLowlight } from "lowlight";
+import { Placeholder } from "@tiptap/extensions";
+import type { Editor } from "@tiptap/core";
+import DragHandle from "@tiptap/extension-drag-handle";
+import { TaskItem, TaskList } from "@tiptap/extension-list";
+import Image from "@tiptap/extension-image";
+import FileHandler from "@tiptap/extension-file-handler";
+import Emoji from "@tiptap/extension-emoji";
+import Audio from "@tiptap/extension-audio";
+import { Details, DetailsContent, DetailsSummary } from "@tiptap/extension-details";
+import Youtube, { isValidYoutubeUrl } from "@tiptap/extension-youtube";
 import {
-  ClipboardEvent,
-  FormEvent,
-  KeyboardEvent,
-  PointerEvent,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { ExternalLink, FolderOpen, Link2, Search, X } from "lucide-react";
-import { MarkdownBlock, parseMarkdown } from "@/doc/markdown-renderer";
-
-type BlockType =
-  | "title"
-  | "heading2"
-  | "heading3"
-  | "paragraph"
-  | "bullet"
-  | "link"
-  | "quote"
-  | "code"
-  | "divider";
-
-type EditorBlock = {
-  id: string;
-  type: BlockType;
-  text: string;
-  href?: string;
-};
+  AudioLines,
+  Bold,
+  CheckSquare,
+  ChevronRight,
+  Code2,
+  Copy,
+  Download,
+  FolderOpen,
+  Heading1,
+  Heading2,
+  Image as ImageIcon,
+  Italic,
+  Link2,
+  List,
+  ListOrdered,
+  Minus,
+  Pilcrow,
+  Quote,
+  Redo2,
+  Search,
+  Smile,
+  Strikethrough,
+  Underline,
+  Undo2,
+  Unlink,
+  Video as VideoIcon,
+  X,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  coerceTiptapDocument,
+  emptyTiptapDocument,
+  ensureTiptapTitle,
+  markdownToTiptapDocument,
+  tiptapDocumentText,
+  tiptapDocumentToMarkdown,
+  type TiptapDocument,
+} from "@/lib/tiptap-document";
+import { Video } from "@/editor/Video";
+import { RequiredTitle } from "@/editor/RequiredTitle";
+import { NotionShortcuts } from "@/editor/NotionShortcuts";
+import { ContextMenu, ContextMenuContent, ContextMenuItem } from "@/components/ui/contextmenu";
+import { Select, SelectGroup, SelectItem } from "@/components/ui/select";
+import { useToast } from "@/components/ui/toast";
 
 type SaveWorkspace = {
   id: string;
@@ -39,815 +67,565 @@ type SaveWorkspace = {
   icon: string;
 };
 
-type Command = {
-  type: BlockType;
-  label: string;
-  hint: string;
-  shortcut: string;
-  group: "Basic" | "Blocks";
-};
-
-const storageKey = "studio-hub-markdown-editor-v2";
-const autosaveDelayMs = 5000;
-
-const commands: Command[] = [
-  {
-    type: "paragraph",
-    label: "Text",
-    hint: "Plain paragraph",
-    shortcut: "text",
-    group: "Basic",
-  },
-  {
-    type: "title",
-    label: "Heading 1",
-    hint: "Large page title",
-    shortcut: "#",
-    group: "Basic",
-  },
-  {
-    type: "heading2",
-    label: "Heading 2",
-    hint: "Section heading",
-    shortcut: "##",
-    group: "Basic",
-  },
-  {
-    type: "heading3",
-    label: "Heading 3",
-    hint: "Small heading",
-    shortcut: "###",
-    group: "Basic",
-  },
-  {
-    type: "link",
-    label: "Link",
-    hint: "Insert a clickable URL",
-    shortcut: "[ ]( )",
-    group: "Basic",
-  },
-  {
-    type: "bullet",
-    label: "Bulleted list",
-    hint: "Simple list item",
-    shortcut: "-",
-    group: "Blocks",
-  },
-  {
-    type: "quote",
-    label: "Quote",
-    hint: "Callout or quote",
-    shortcut: ">",
-    group: "Blocks",
-  },
-  {
-    type: "code",
-    label: "Code",
-    hint: "Code block",
-    shortcut: "```",
-    group: "Blocks",
-  },
-  {
-    type: "divider",
-    label: "Divider",
-    hint: "Horizontal rule",
-    shortcut: "---",
-    group: "Blocks",
-  },
-];
-
-const starterBlocks: EditorBlock[] = [
-  {
-    id: "block-empty",
-    type: "paragraph",
-    text: "",
-  },
-];
-
-function createBlock(
-  type: BlockType = "paragraph",
-  text = "",
-  href?: string,
-): EditorBlock {
-  return {
-    id: crypto.randomUUID(),
-    type,
-    text,
-    href,
-  };
-}
-
-function detectBlock(text: string, currentType: BlockType) {
-  const conversions: Array<[RegExp, BlockType]> = [
-    [/^###\s+/, "heading3"],
-    [/^##\s+/, "heading2"],
-    [/^#\s+/, "title"],
-    [/^[-*]\s+/, "bullet"],
-    [/^>\s+/, "quote"],
-    [/^```\s*/, "code"],
-    [/^---+$/, "divider"],
-  ];
-
-  for (const [pattern, type] of conversions) {
-    if (pattern.test(text)) {
-      return {
-        type,
-        text: type === "divider" ? "" : text.replace(pattern, ""),
-      };
-    }
-  }
-
-  return { type: currentType, text };
-}
-
-function blockToMarkdown(block: EditorBlock) {
-  if (block.type === "title") {
-    return `# ${block.text}`;
-  }
-
-  if (block.type === "heading2") {
-    return `## ${block.text}`;
-  }
-
-  if (block.type === "heading3") {
-    return `### ${block.text}`;
-  }
-
-  if (block.type === "bullet") {
-    return `- ${block.text}`;
-  }
-
-  if (block.type === "quote") {
-    return `> ${block.text}`;
-  }
-
-  if (block.type === "link") {
-    return `[${block.text || "Link text"}](${block.href || "https://example.com"})`;
-  }
-
-  if (block.type === "code") {
-    return `\`\`\`\n${block.text}\n\`\`\``;
-  }
-
-  if (block.type === "divider") {
-    return "---";
-  }
-
-  return block.text;
-}
-
-function blocksToMarkdown(blocks: EditorBlock[]) {
-  return blocks.map(blockToMarkdown).join("\n\n");
-}
-
-function markdownBlockToEditorBlocks(block: MarkdownBlock): EditorBlock[] {
-  const exactLink =
-    block.type === "paragraph"
-      ? /^\[([^\]]+)\]\(([^)]+)\)$/.exec(block.text.trim())
-      : null;
-
-  if (exactLink) {
-    return [createBlock("link", exactLink[1], exactLink[2])];
-  }
-
-  if (block.type === "heading") {
-    if (block.level === 1) {
-      return [createBlock("title", block.text)];
-    }
-
-    if (block.level === 2) {
-      return [createBlock("heading2", block.text)];
-    }
-
-    return [createBlock("heading3", block.text)];
-  }
-
-  if (block.type === "list") {
-    return block.items.map((item) => createBlock("bullet", item));
-  }
-
-  if (block.type === "blockquote") {
-    return [createBlock("quote", block.text)];
-  }
-
-  if (block.type === "code") {
-    return [createBlock("code", block.code)];
-  }
-
-  if (block.type === "divider") {
-    return [createBlock("divider")];
-  }
-
-  return [createBlock("paragraph", block.text)];
-}
-
-function markdownToEditorBlocks(markdown: string) {
-  const parsedBlocks = parseMarkdown(markdown);
-  const editorBlocks = parsedBlocks.flatMap(markdownBlockToEditorBlocks);
-
-  if (editorBlocks.length) {
-    return editorBlocks;
-  }
-
-  return [createBlock("paragraph", markdown.trim())];
-}
+const lowlight = createLowlight(common);
 
 type MarkdownEditorProps = {
   workspaceId?: string;
   documentId?: string;
   initialTitle?: string;
-  initialMarkdown?: string;
+  initialContent?: TiptapDocument;
+  initialVisibility?: "public" | "private" | "workspace";
   availableWorkspaces?: SaveWorkspace[];
 };
 
-function getBlockClass(type: BlockType) {
-  const shared =
-    "min-h-8 w-full min-w-0 whitespace-pre-wrap break-words rounded-md px-1 py-1 outline-none transition-colors [overflow-wrap:anywhere]";
+type SlashCommand = {
+  label: string;
+  hint: string;
+  shortcut: string;
+  keywords: string[];
+  run: () => void;
+};
 
-  if (type === "title") {
-    return `${shared} text-5xl font-semibold tracking-tight text-zinc-950 md:text-6xl`;
-  }
+type SlashRange = { from: number; to: number };
 
-  if (type === "heading2") {
-    return `${shared} text-4xl font-semibold tracking-tight text-zinc-950 md:text-5xl`;
-  }
+const storageKey = "studio-hub-tiptap-editor-v1";
+const legacyStorageKey = "studio-hub-markdown-editor-v2";
+const autosaveDelayMs = 5000;
+const maxEmbeddedFileBytes = 8 * 1024 * 1024;
+const allowedMediaTypes = [
+  "image/png", "image/jpeg", "image/gif", "image/webp",
+  "audio/mpeg", "audio/wav", "audio/ogg", "audio/mp4", "audio/webm",
+  "video/mp4", "video/webm", "video/ogg",
+];
 
-  if (type === "heading3") {
-    return `${shared} text-2xl font-semibold tracking-tight text-zinc-950 md:text-3xl`;
-  }
+const emojiChoices = [
+  { shortcode: "grinning", emoji: "😀", label: "Grinning face" },
+  { shortcode: "smiley", emoji: "😃", label: "Smiley" },
+  { shortcode: "joy", emoji: "😂", label: "Joy" },
+  { shortcode: "heart_eyes", emoji: "😍", label: "Heart eyes" },
+  { shortcode: "thinking", emoji: "🤔", label: "Thinking" },
+  { shortcode: "thumbsup", emoji: "👍", label: "Thumbs up" },
+  { shortcode: "clap", emoji: "👏", label: "Clap" },
+  { shortcode: "tada", emoji: "🎉", label: "Celebration" },
+  { shortcode: "fire", emoji: "🔥", label: "Fire" },
+  { shortcode: "eyes", emoji: "👀", label: "Eyes" },
+  { shortcode: "white_check_mark", emoji: "✅", label: "Check" },
+  { shortcode: "rocket", emoji: "🚀", label: "Rocket" },
+];
 
-  if (type === "bullet") {
-    return `${shared} text-lg leading-relaxed text-zinc-700 md:text-xl`;
-  }
-
-  if (type === "link") {
-    return `${shared} text-lg font-medium leading-relaxed text-blue-600 underline decoration-blue-200 underline-offset-4 md:text-xl`;
-  }
-
-  if (type === "quote") {
-    return `${shared} border-l-4 border-zinc-300 bg-zinc-50 pl-5 text-lg leading-relaxed text-zinc-600 md:text-xl`;
-  }
-
-  if (type === "code") {
-    return `${shared} whitespace-pre-wrap bg-zinc-950 p-4 font-mono text-sm leading-7 text-zinc-100 focus:bg-zinc-950`;
-  }
-
-  return `${shared} text-lg leading-relaxed text-zinc-700 md:text-xl`;
+function fileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () =>
+      typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Unable to read file.")),
+    );
+    reader.addEventListener("error", () => reject(reader.error ?? new Error("Unable to read file.")));
+    reader.readAsDataURL(file);
+  });
 }
 
-function labelFor(type: BlockType) {
-  if (type === "title") return "H1";
-  if (type === "heading2") return "H2";
-  if (type === "heading3") return "H3";
-  if (type === "bullet") return "List";
-  if (type === "link") return "Link";
-  if (type === "quote") return "Quote";
-  if (type === "code") return "Code";
-  if (type === "divider") return "Rule";
-  return "Text";
+async function mediaFileToNode(file: File) {
+  if (file.size > maxEmbeddedFileBytes) {
+    window.alert(`${file.name} is larger than 8 MB and was not added.`);
+    return null;
+  }
+
+  const src = await fileAsDataUrl(file);
+  if (file.type.startsWith("image/")) {
+    return { type: "image", attrs: { src, alt: file.name, title: file.name } };
+  }
+  if (file.type.startsWith("audio/")) {
+    return { type: "audio", attrs: { src } };
+  }
+  if (file.type.startsWith("video/")) {
+    return { type: "video", attrs: { src, title: file.name } };
+  }
+  return null;
+}
+
+function insertMediaFiles(editor: Editor, files: File[], position?: number) {
+  void Promise.all(files.map(mediaFileToNode)).then((nodes) => {
+    const content = nodes.filter((node) => node !== null);
+    if (!content.length) return;
+
+    const at = position ?? editor.state.selection.from;
+    editor.chain().focus().insertContentAt(at, content).run();
+  });
+}
+
+function getSlashMatch(editor: Editor) {
+  const { selection } = editor.state;
+  if (!selection.empty || !selection.$from.parent.isTextblock) return null;
+  if (selection.$from.parent.type.name === "codeBlock") return null;
+
+  const textBeforeCursor = selection.$from.parent.textBetween(
+    0,
+    selection.$from.parentOffset,
+    undefined,
+    "\ufffc",
+  );
+  const slashIndex = textBeforeCursor.lastIndexOf("/");
+  if (slashIndex < 0) return null;
+
+  const characterBeforeSlash = textBeforeCursor[slashIndex - 1];
+  if (characterBeforeSlash && !/\s/.test(characterBeforeSlash)) return null;
+
+  const query = textBeforeCursor.slice(slashIndex + 1);
+  if (query.includes("/") || query.length > 80) return null;
+
+  return {
+    query,
+    range: {
+      from: selection.from - query.length - 1,
+      to: selection.from,
+    },
+  };
+}
+
+function duplicateCurrentBlock(editor: Editor) {
+  const { $from } = editor.state.selection;
+  if ($from.depth < 1) return;
+  const block = $from.node(1);
+  const blockStart = $from.before(1);
+  editor.chain().focus().insertContentAt(blockStart + block.nodeSize, block.toJSON()).run();
+}
+
+function deleteCurrentBlock(editor: Editor) {
+  const { $from } = editor.state.selection;
+  if ($from.depth < 1 || $from.index(0) === 0) return;
+  const block = $from.node(1);
+  const blockStart = $from.before(1);
+  editor.chain().focus().deleteRange({ from: blockStart, to: blockStart + block.nodeSize }).run();
+}
+
+function readLegacyLocalDocument(value: string): TiptapDocument | null {
+  try {
+    const blocks = JSON.parse(value) as Array<{
+      type?: string;
+      text?: string;
+      href?: string;
+    }>;
+    if (!Array.isArray(blocks)) return null;
+
+    const markdown = blocks.map((block) => {
+      const text = typeof block.text === "string" ? block.text : "";
+      if (block.type === "title") return `# ${text}`;
+      if (block.type === "heading2") return `## ${text}`;
+      if (block.type === "heading3") return `### ${text}`;
+      if (block.type === "bullet") return `- ${text}`;
+      if (block.type === "quote") return `> ${text}`;
+      if (block.type === "code") return `\`\`\`\n${text}\n\`\`\``;
+      if (block.type === "divider") return "---";
+      if (block.type === "link") return `[${text || "Link text"}](${block.href || "https://example.com"})`;
+      return text;
+    }).join("\n\n");
+
+    return markdownToTiptapDocument(markdown);
+  } catch {
+    return null;
+  }
+}
+
+function readLocalDocument(value: string): TiptapDocument | null {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== "object" || !("type" in parsed) || parsed.type !== "doc") {
+      return null;
+    }
+    return coerceTiptapDocument(parsed);
+  } catch {
+    return null;
+  }
+}
+
+function ToolbarButton({
+  label,
+  active = false,
+  disabled = false,
+  onClick,
+  children,
+}: {
+  label: string;
+  active?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      aria-pressed={active}
+      disabled={disabled}
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={onClick}
+      className={`flex size-9 items-center justify-center rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${
+        active
+          ? "bg-zinc-950 text-white"
+          : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950"
+      }`}
+    >
+      {children}
+    </button>
+  );
 }
 
 export default function MarkdownEditor({
   workspaceId,
   documentId,
   initialTitle = "untitled",
-  initialMarkdown = "",
+  initialContent = emptyTiptapDocument,
+  initialVisibility = "private",
   availableWorkspaces = [],
 }: MarkdownEditorProps) {
-  const initialBlocks = useMemo(
-    () => (initialMarkdown ? markdownToEditorBlocks(initialMarkdown) : starterBlocks),
-    [initialMarkdown],
+  const toast = useToast();
+  const normalizedInitialContent = useMemo(
+    () => ensureTiptapTitle(coerceTiptapDocument(initialContent), initialTitle),
+    [initialContent, initialTitle],
   );
-  const [blocks, setBlocks] = useState<EditorBlock[]>(initialBlocks);
+  const [content, setContent] = useState<TiptapDocument>(normalizedInitialContent);
   const [savedDocumentId, setSavedDocumentId] = useState(documentId);
   const [title, setTitle] = useState(initialTitle || "untitled");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">(
     documentId ? "saved" : "idle",
   );
   const [saveError, setSaveError] = useState("");
-  const [lastSavedMarkdown, setLastSavedMarkdown] = useState(initialMarkdown);
+  const [lastSavedContent, setLastSavedContent] = useState(
+    JSON.stringify(normalizedInitialContent),
+  );
   const [lastSavedTitle, setLastSavedTitle] = useState(initialTitle || "untitled");
-  const [focusId, setFocusId] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [commandBlockId, setCommandBlockId] = useState<string | null>(null);
-  const [commandQuery, setCommandQuery] = useState("");
-  const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
-  const [currentBlockId, setCurrentBlockId] = useState(initialBlocks[0].id);
+  const [visibility, setVisibility] = useState(initialVisibility);
+  const [lastSavedVisibility, setLastSavedVisibility] = useState(initialVisibility);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(workspaceId ?? "");
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
   const [workspaceSearch, setWorkspaceSearch] = useState("");
-  const [linkEditorBlockId, setLinkEditorBlockId] = useState<string | null>(null);
-  const refs = useRef<Record<string, HTMLDivElement | null>>({});
-  const editorRootRef = useRef<HTMLDivElement | null>(null);
-  const commandInputRef = useRef<HTMLInputElement | null>(null);
-  const storageLoaded = useRef(false);
+  const [copied, setCopied] = useState(false);
+  const [slashMenuOpen, setSlashMenuOpen] = useState(false);
+  const [slashSearch, setSlashSearch] = useState("");
+  const [slashRange, setSlashRange] = useState<SlashRange | null>(null);
+  const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
+  const [slashMenuPosition, setSlashMenuPosition] = useState({ left: 24, top: 120 });
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const savingRef = useRef(false);
 
-  useEffect(() => {
-    if (workspaceId || documentId || initialMarkdown) {
-      storageLoaded.current = true;
+  function syncSlashMenu(currentEditor: Editor) {
+    const match = getSlashMatch(currentEditor);
+    if (!match) {
+      setSlashMenuOpen(false);
+      setSlashRange(null);
       return;
     }
 
-    const timeoutId = window.setTimeout(() => {
-      const saved = window.localStorage.getItem(storageKey);
+    const coordinates = currentEditor.view.coordsAtPos(match.range.to);
+    setSlashSearch(match.query);
+    setSlashRange(match.range);
+    setSelectedSlashIndex(0);
+    setSlashMenuPosition({
+      left: Math.max(12, Math.min(coordinates.left, window.innerWidth - 540)),
+      top: Math.min(coordinates.bottom + 8, window.innerHeight - 420),
+    });
+    setSlashMenuOpen(true);
+  }
 
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved) as EditorBlock[];
-          if (Array.isArray(parsed) && parsed.length) {
-            setBlocks(parsed);
-          }
-        } catch {
-          window.localStorage.removeItem(storageKey);
+  function closeSlashMenu() {
+    setSlashMenuOpen(false);
+    setSlashRange(null);
+    setSelectedSlashIndex(0);
+  }
+
+  const editor = useEditor({
+    immediatelyRender: false,
+    extensions: [
+      StarterKit.configure({
+        codeBlock: false,
+        heading: { levels: [1, 2, 3, 4] },
+        link: {
+          openOnClick: false,
+          autolink: true,
+          defaultProtocol: "https",
+          protocols: ["http", "https", "mailto", "tel"],
+          HTMLAttributes: {
+            rel: "noopener noreferrer nofollow",
+            target: "_blank",
+          },
+        },
+      }),
+      CodeBlockLowlight.configure({ lowlight }),
+      Placeholder.configure({
+        placeholder: ({ node, pos }) =>
+          node.type.name === "heading"
+            ? pos === 0 ? "Title" : "Heading"
+            : "Type '/' for commands…",
+      }),
+      RequiredTitle,
+      NotionShortcuts,
+      TaskList,
+      TaskItem.configure({ nested: true }),
+      Details.configure({ persist: true }),
+      DetailsSummary,
+      DetailsContent,
+      Image.configure({
+        allowBase64: true,
+        resize: {
+          enabled: true,
+          directions: ["top-left", "top-right", "bottom-left", "bottom-right"],
+          minWidth: 120,
+          minHeight: 80,
+          alwaysPreserveAspectRatio: true,
+        },
+        HTMLAttributes: { class: "tiptap-image" },
+      }),
+      Audio.configure({ allowBase64: true }),
+      Youtube.configure({ nocookie: true, width: 720, height: 405 }),
+      Video,
+      Emoji.configure({ enableEmoticons: true }),
+      FileHandler.configure({
+        allowedMimeTypes: allowedMediaTypes,
+        consumePasteEvent: true,
+        onPaste: (currentEditor, files) => insertMediaFiles(currentEditor, files),
+        onDrop: (currentEditor, files, position) =>
+          insertMediaFiles(currentEditor, files, position),
+      }),
+      DragHandle.configure({
+        nested: {
+          rules: [
+            {
+              id: "keep-page-title-fixed",
+              evaluate: ({ node, parent, isFirst }) =>
+                parent?.type.name === "doc" && isFirst && node.type.name === "heading"
+                  ? 1000
+                  : 0,
+            },
+          ],
+        },
+        render: () => {
+          const handle = document.createElement("button");
+          handle.type = "button";
+          handle.className = "tiptap-drag-handle";
+          handle.title = "Drag to move block";
+          handle.setAttribute("aria-label", "Drag to move block");
+          handle.textContent = "⠿";
+          return handle;
+        },
+      }),
+    ],
+    content: normalizedInitialContent,
+    editorProps: {
+      attributes: {
+        class: "tiptap-editor min-h-[calc(100vh-9rem)] px-5 py-10 outline-none md:px-10",
+        spellcheck: "true",
+      },
+      handleKeyDown: (_view, event) => {
+        if (slashMenuOpen && event.key === "ArrowDown") {
+          event.preventDefault();
+          setSelectedSlashIndex((index) =>
+            visibleSlashCommands.length ? (index + 1) % visibleSlashCommands.length : 0,
+          );
+          return true;
         }
-      }
+        if (slashMenuOpen && event.key === "ArrowUp") {
+          event.preventDefault();
+          setSelectedSlashIndex((index) =>
+            visibleSlashCommands.length
+              ? (index - 1 + visibleSlashCommands.length) % visibleSlashCommands.length
+              : 0,
+          );
+          return true;
+        }
+        if (
+          slashMenuOpen &&
+          (event.key === "Enter" || event.key === "Tab") &&
+          visibleSlashCommands[selectedSlashIndex]
+        ) {
+          event.preventDefault();
+          visibleSlashCommands[selectedSlashIndex]?.run();
+          return true;
+        }
+        if (slashMenuOpen && event.key === "Escape") {
+          closeSlashMenu();
+          return true;
+        }
+        if (event.key === "Escape") {
+          setEmojiPickerOpen(false);
+        }
+        return false;
+      },
+      handleDOMEvents: {
+        contextmenu: (view, event) => {
+          if (view.state.selection.empty) return false;
+          event.preventDefault();
+          return true;
+        },
+      },
+    },
+    onUpdate: ({ editor: currentEditor }) => {
+      const nextContent = coerceTiptapDocument(currentEditor.getJSON());
+      setContent(nextContent);
+      setTitle(currentEditor.state.doc.firstChild?.textContent.trim().slice(0, 180) || "untitled");
+      syncSlashMenu(currentEditor);
+    },
+    onSelectionUpdate: ({ editor: currentEditor }) => syncSlashMenu(currentEditor),
+  });
 
-      storageLoaded.current = true;
-    }, 0);
+  const activeState = useEditorState({
+    editor,
+    selector: ({ editor: currentEditor }) => ({
+      paragraph: currentEditor?.isActive("paragraph") ?? false,
+      heading1: currentEditor?.isActive("heading", { level: 1 }) ?? false,
+      heading2: currentEditor?.isActive("heading", { level: 2 }) ?? false,
+      bold: currentEditor?.isActive("bold") ?? false,
+      italic: currentEditor?.isActive("italic") ?? false,
+      underline: currentEditor?.isActive("underline") ?? false,
+      strike: currentEditor?.isActive("strike") ?? false,
+      inlineCode: currentEditor?.isActive("code") ?? false,
+      link: currentEditor?.isActive("link") ?? false,
+      bulletList: currentEditor?.isActive("bulletList") ?? false,
+      orderedList: currentEditor?.isActive("orderedList") ?? false,
+      taskList: currentEditor?.isActive("taskList") ?? false,
+      blockquote: currentEditor?.isActive("blockquote") ?? false,
+      codeBlock: currentEditor?.isActive("codeBlock") ?? false,
+      details: currentEditor?.isActive("details") ?? false,
+      canUndo: currentEditor?.can().undo() ?? false,
+      canRedo: currentEditor?.can().redo() ?? false,
+    }),
+  });
 
-    return () => window.clearTimeout(timeoutId);
-  }, [documentId, initialMarkdown, workspaceId]);
+  useEffect(() => {
+    if (!editor || workspaceId || documentId) return;
+
+    const saved = window.localStorage.getItem(storageKey);
+    const legacy = window.localStorage.getItem(legacyStorageKey);
+    const restored = saved
+      ? readLocalDocument(saved)
+      : legacy
+        ? readLegacyLocalDocument(legacy)
+        : null;
+
+    if (restored) {
+      const titledDocument = ensureTiptapTitle(restored, initialTitle);
+      editor.commands.setContent(titledDocument);
+      window.localStorage.setItem(storageKey, JSON.stringify(titledDocument));
+      window.localStorage.removeItem(legacyStorageKey);
+    }
+  }, [documentId, editor, initialTitle, workspaceId]);
 
   useEffect(() => {
     if (workspaceId || documentId) return;
-    if (!storageLoaded.current) return;
+    window.localStorage.setItem(storageKey, JSON.stringify(content));
+  }, [content, documentId, workspaceId]);
 
-    window.localStorage.setItem(storageKey, JSON.stringify(blocks));
-  }, [blocks, documentId, workspaceId]);
-
-  useEffect(() => {
-    if (!focusId) return;
-
-    const node = refs.current[focusId];
-    if (!node) return;
-
-    editorRootRef.current?.focus();
-    const range = document.createRange();
-    range.selectNodeContents(node);
-    range.collapse(false);
-
-    const selection = window.getSelection();
-    selection?.removeAllRanges();
-    selection?.addRange(range);
-  }, [blocks, focusId]);
-
-  useEffect(() => {
-    if (!commandBlockId) return;
-
-    commandInputRef.current?.focus();
-  }, [commandBlockId]);
-
-  const markdown = useMemo(() => blocksToMarkdown(blocks), [blocks]);
+  const markdown = useMemo(() => tiptapDocumentToMarkdown(content), [content]);
+  const plainText = useMemo(() => tiptapDocumentText(content), [content]);
+  const contentFingerprint = useMemo(() => JSON.stringify(content), [content]);
+  const words = plainText ? plainText.split(/\s+/).length : 0;
+  const readingTime = Math.max(1, Math.ceil(words / 180));
   const saveWorkspaceId = workspaceId ?? selectedWorkspaceId;
   const selectedWorkspace = availableWorkspaces.find(
     (workspace) => workspace.id === saveWorkspaceId,
   );
   const filteredWorkspaces = availableWorkspaces.filter((workspace) => {
     const query = workspaceSearch.trim().toLowerCase();
-    if (!query) return true;
-
-    return (
-      workspace.name.toLowerCase().includes(query) ||
-      workspace.slug.toLowerCase().includes(query)
-    );
+    return !query || workspace.name.toLowerCase().includes(query) || workspace.slug.toLowerCase().includes(query);
   });
   const hasRemoteSave = Boolean(saveWorkspaceId || savedDocumentId);
   const hasUnsavedChanges =
-    markdown !== lastSavedMarkdown || title.trim() !== lastSavedTitle;
-  const words = markdown.trim() ? markdown.trim().split(/\s+/).length : 0;
-  const readingTime = Math.max(1, Math.ceil(words / 180));
-  const filteredCommands = commands.filter((command) => {
-    const query = commandQuery.toLowerCase();
+    contentFingerprint !== lastSavedContent ||
+    title.trim() !== lastSavedTitle ||
+    visibility !== lastSavedVisibility;
 
-    return (
+  const setLink = useCallback(() => {
+    if (!editor) return;
+    const previousUrl = editor.getAttributes("link").href as string | undefined;
+    const url = window.prompt("Link URL", previousUrl ?? "https://");
+    if (url === null) return;
+    if (!url.trim()) {
+      editor.chain().focus().extendMarkRange("link").unsetLink().run();
+      return;
+    }
+    editor.chain().focus().extendMarkRange("link").setLink({ href: url.trim() }).run();
+  }, [editor]);
+
+  const insertImage = useCallback(() => {
+    if (!editor) return;
+    const url = window.prompt("Image URL", "https://");
+    if (!url?.trim()) return;
+    const alt = window.prompt("Image description (optional)", "") ?? "";
+    editor.chain().focus().setImage({ src: url.trim(), alt }).run();
+  }, [editor]);
+
+  const insertVideo = useCallback(() => {
+    if (!editor) return;
+    const url = window.prompt("Video or YouTube URL", "https://");
+    if (!url?.trim()) return;
+    const src = url.trim();
+    if (isValidYoutubeUrl(src)) {
+      editor.chain().focus().setYoutubeVideo({ src }).run();
+      return;
+    }
+    editor.chain().focus().insertContent({ type: "video", attrs: { src } }).run();
+  }, [editor]);
+
+  const insertAudio = useCallback(() => {
+    if (!editor) return;
+    const url = window.prompt("Audio URL", "https://");
+    if (!url?.trim()) return;
+    editor.chain().focus().setAudio({ src: url.trim() }).run();
+  }, [editor]);
+
+  const slashCommands = useMemo<SlashCommand[]>(() => {
+    const run = (command: () => void) => () => {
+      if (editor && slashRange) {
+        editor.chain().focus().deleteRange(slashRange).run();
+      }
+      closeSlashMenu();
+      command();
+      setSlashSearch("");
+    };
+
+    return [
+      { label: "Text", hint: "Plain paragraph", shortcut: "/text", keywords: ["text", "plain", "paragraph", "0"], run: run(() => editor?.chain().focus().setParagraph().run()) },
+      { label: "Heading 1", hint: "Large section heading", shortcut: "/h1", keywords: ["heading 1", "h1", "#", "title", "large"], run: run(() => editor?.chain().focus().toggleHeading({ level: 1 }).run()) },
+      { label: "Heading 2", hint: "Medium section heading", shortcut: "/h2", keywords: ["heading 2", "h2", "##", "medium"], run: run(() => editor?.chain().focus().toggleHeading({ level: 2 }).run()) },
+      { label: "Heading 3", hint: "Small section heading", shortcut: "/h3", keywords: ["heading 3", "h3", "###", "small"], run: run(() => editor?.chain().focus().toggleHeading({ level: 3 }).run()) },
+      { label: "Heading 4", hint: "Compact section heading", shortcut: "/h4", keywords: ["heading 4", "h4", "####", "compact"], run: run(() => editor?.chain().focus().toggleHeading({ level: 4 }).run()) },
+      { label: "Code block", hint: "Preformatted code", shortcut: "/code", keywords: ["code", "snippet", "preformatted", "8"], run: run(() => editor?.chain().focus().toggleCodeBlock().run()) },
+      { label: "Quote", hint: "Quotation block", shortcut: "/quote", keywords: ["quote", "quotation", "callout"], run: run(() => editor?.chain().focus().toggleBlockquote().run()) },
+      { label: "To-do list", hint: "Checklist with completed state", shortcut: "/todo", keywords: ["todo", "to-do", "checkbox", "checklist", "task", "4"], run: run(() => editor?.chain().focus().toggleTaskList().run()) },
+      { label: "Numbered list", hint: "Ordered list", shortcut: "/num", keywords: ["numbered", "number", "num", "ordered", "1.", "6"], run: run(() => editor?.chain().focus().toggleOrderedList().run()) },
+      { label: "Bullet list", hint: "Unordered list", shortcut: "/bullet", keywords: ["bullet", "bulleted", "unordered", "list", "-", "5"], run: run(() => editor?.chain().focus().toggleBulletList().run()) },
+      { label: "Toggle list", hint: "Collapsible details section", shortcut: "/toggle", keywords: ["toggle", "collapsible", "details", "7"], run: run(() => editor?.chain().focus().setDetails().run()) },
+      { label: "Divider", hint: "Horizontal rule", shortcut: "/div", keywords: ["divider", "div", "separator", "rule", "hr", "---"], run: run(() => editor?.chain().focus().setHorizontalRule().run()) },
+      { label: "Image", hint: "Embed an image from a URL", shortcut: "/image", keywords: ["image", "photo", "picture", "upload", "media"], run: run(insertImage) },
+      { label: "Video", hint: "Embed video or YouTube", shortcut: "/video", keywords: ["video", "youtube", "movie", "media"], run: run(insertVideo) },
+      { label: "Audio", hint: "Embed an audio player", shortcut: "/audio", keywords: ["audio", "sound", "music", "media"], run: run(insertAudio) },
+      { label: "Link", hint: "Add a link to selected text", shortcut: "/link", keywords: ["link", "url", "web"], run: run(setLink) },
+      { label: "Duplicate block", hint: "Copy the current block", shortcut: "/duplicate", keywords: ["duplicate", "copy", "clone", "block"], run: run(() => editor && duplicateCurrentBlock(editor)) },
+      { label: "Delete block", hint: "Remove the current block", shortcut: "/delete", keywords: ["delete", "remove", "trash", "block"], run: run(() => editor && deleteCurrentBlock(editor)) },
+      { label: "Clear formatting", hint: "Return text to its default style", shortcut: "/clear", keywords: ["clear", "default", "remove formatting"], run: run(() => editor?.chain().focus().unsetAllMarks().clearNodes().run()) },
+      {
+        label: "Emoji",
+        hint: "Choose an emoji",
+        shortcut: "/emoji",
+        keywords: ["emoji", "smile", "icon", "emoticon"],
+        run: () => {
+          if (editor && slashRange) {
+            editor.chain().focus().deleteRange(slashRange).run();
+          }
+          closeSlashMenu();
+          setEmojiPickerOpen(true);
+        },
+      },
+    ];
+  }, [editor, insertAudio, insertImage, insertVideo, setLink, slashRange]);
+
+  const visibleSlashCommands = slashCommands.filter((command) => {
+    const query = slashSearch.trim().toLowerCase();
+    return !query ||
       command.label.toLowerCase().includes(query) ||
       command.hint.toLowerCase().includes(query) ||
-      command.shortcut.includes(query)
-    );
+      command.keywords.some((keyword) => keyword.includes(query));
   });
-  const groupedCommands = filteredCommands.reduce<Record<Command["group"], Command[]>>(
-    (groups, command) => {
-      groups[command.group].push(command);
-      return groups;
-    },
-    { Basic: [], Blocks: [] },
-  );
-
-  function openCommandMenu(id: string) {
-    setCommandBlockId(id);
-    setCommandQuery("");
-    setSelectedCommandIndex(0);
-  }
-
-  function moveCaretToEnd(node: HTMLDivElement) {
-    editorRootRef.current?.focus();
-    const range = document.createRange();
-    range.selectNodeContents(node);
-    range.collapse(false);
-
-    const selection = window.getSelection();
-    selection?.removeAllRanges();
-    selection?.addRange(range);
-  }
-
-  function syncEditableNode(node: HTMLDivElement | null, block: EditorBlock) {
-    refs.current[block.id] = node;
-
-    if (!node) return;
-
-    if (node.textContent !== block.text) {
-      node.textContent = block.text;
-    }
-  }
-
-  function getEventBlock(target: EventTarget | null) {
-    const element =
-      target instanceof HTMLElement
-        ? target
-        : target instanceof Node
-          ? target.parentElement
-          : null;
-
-    const selection = window.getSelection();
-    const selectionElement =
-      selection?.anchorNode instanceof HTMLElement
-        ? selection.anchorNode
-        : selection?.anchorNode?.parentElement;
-    const lookupElement = element ?? selectionElement;
-
-    if (!lookupElement) return null;
-
-    const blockNode =
-      lookupElement.closest<HTMLElement>("[data-block-id]") ??
-      selectionElement?.closest<HTMLElement>("[data-block-id]");
-    const blockId = blockNode?.dataset.blockId;
-    const block = blocks.find((item) => item.id === blockId);
-
-    if (!blockNode || !block) return null;
-
-    return {
-      block,
-      node: blockNode as HTMLDivElement,
-    };
-  }
-
-  function getSelectedBlockIds() {
-    const selection = window.getSelection();
-    if (!selection || selection.isCollapsed || !selection.rangeCount) return [];
-
-    const range = selection.getRangeAt(0);
-    const selectedIds = blocks
-      .filter((block) => {
-        const node = refs.current[block.id];
-        return node ? range.intersectsNode(node) : false;
-      })
-      .map((block) => block.id);
-
-    return selectedIds;
-  }
-
-  function copySelectedBlocks() {
-    const selectedIds = getSelectedBlockIds();
-    if (selectedIds.length < 2) return false;
-
-    const selectedMarkdown = blocks
-      .filter((block) => selectedIds.includes(block.id))
-      .map(blockToMarkdown)
-      .join("\n\n");
-
-    void navigator.clipboard.writeText(selectedMarkdown);
-    return true;
-  }
-
-  function deleteSelectedBlocks() {
-    const selectedIds = getSelectedBlockIds();
-    if (selectedIds.length < 2) return false;
-
-    setBlocks((current) => {
-      const firstIndex = current.findIndex((block) => block.id === selectedIds[0]);
-      const next = current.filter((block) => !selectedIds.includes(block.id));
-
-      if (!next.length) {
-        const emptyBlock = createBlock();
-        setFocusId(emptyBlock.id);
-        return [emptyBlock];
-      }
-
-      const focusBlock = next[Math.max(0, Math.min(firstIndex, next.length - 1))];
-      setFocusId(focusBlock.id);
-      return next;
-    });
-
-    window.getSelection()?.removeAllRanges();
-    return true;
-  }
-
-  function updateBlock(id: string, rawText: string, sourceNode: HTMLDivElement) {
-    let transformedText: string | null = null;
-
-    setBlocks((current) =>
-      current.map((block) => {
-        if (block.id !== id) return block;
-
-        if (!rawText.trim()) {
-          if (block.type !== "paragraph") {
-            setFocusId(id);
-          }
-
-          return { ...block, type: "paragraph", text: "", href: undefined };
-        }
-
-        const next = detectBlock(rawText, block.type);
-        if (next.type !== block.type) {
-          setFocusId(id);
-        }
-
-        if (next.text !== rawText) {
-          transformedText = next.text;
-        }
-
-        return { ...block, type: next.type, text: next.text };
-      }),
-    );
-
-    if (transformedText !== null) {
-      window.requestAnimationFrame(() => {
-        sourceNode.textContent = transformedText;
-        moveCaretToEnd(sourceNode);
-      });
-    }
-  }
-
-  function insertBlock(afterId: string, type: BlockType = "paragraph") {
-    const nextBlock = createBlock(type);
-
-    setBlocks((current) => {
-      const index = current.findIndex((block) => block.id === afterId);
-      const next = [...current];
-      next.splice(index + 1, 0, nextBlock);
-      return next;
-    });
-    setFocusId(nextBlock.id);
-  }
-
-  function removeBlock(id: string) {
-    setBlocks((current) => {
-      if (current.length === 1) {
-        return [{ ...current[0], type: "paragraph", text: "" }];
-      }
-
-      const index = current.findIndex((block) => block.id === id);
-      const next = current.filter((block) => block.id !== id);
-      const fallback = next[Math.max(0, index - 1)];
-      setFocusId(fallback.id);
-      return next;
-    });
-  }
-
-  function changeBlockType(id: string, type: BlockType) {
-    setBlocks((current) =>
-      current.map((block) => (block.id === id ? { ...block, type } : block)),
-    );
-    setFocusId(id);
-  }
-
-  function getActiveBlockId() {
-    const eventBlock = getEventBlock(document.activeElement);
-    return eventBlock?.block.id ?? currentBlockId ?? blocks[blocks.length - 1]?.id;
-  }
-
-  function runToolbarCommand(type: BlockType) {
-    const activeId = getActiveBlockId();
-    if (!activeId) return;
-
-    changeBlockType(activeId, type);
-  }
-
-  function insertToolbarBlock(type: BlockType) {
-    const activeId = getActiveBlockId();
-    if (!activeId) return;
-
-    insertBlock(activeId, type);
-  }
-
-  function runCommand(command: Command) {
-    if (!commandBlockId) return;
-
-    setBlocks((current) =>
-      current.map((block) => {
-        if (block.id !== commandBlockId) return block;
-
-        const text = block.text.replace(/\/[\w\s-]*$/, "").trimEnd();
-
-        if (command.type === "link") {
-          return {
-            ...block,
-            type: "link",
-            text: text || "Link text",
-            href: block.href || "https://example.com",
-          };
-        }
-
-        return {
-          ...block,
-          type: command.type,
-          text: command.type === "divider" ? "" : text,
-        };
-      }),
-    );
-    setFocusId(commandBlockId);
-    if (command.type === "link") {
-      setLinkEditorBlockId(commandBlockId);
-    }
-    setCommandBlockId(null);
-    setCommandQuery("");
-    setSelectedCommandIndex(0);
-  }
-
-  function closeCommandMenu() {
-    setCommandBlockId(null);
-    setCommandQuery("");
-    setSelectedCommandIndex(0);
-  }
-
-  function updateLinkHref(id: string, href: string) {
-    setBlocks((current) =>
-      current.map((block) =>
-        block.id === id ? { ...block, href: href.trim() } : block,
-      ),
-    );
-  }
-
-  function openLink(block: EditorBlock) {
-    if (!block.href) return;
-    window.open(block.href, "_blank", "noopener,noreferrer");
-  }
-
-  function handleCommandInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      if (filteredCommands.length) {
-        setSelectedCommandIndex(
-          (index) => (index + 1) % filteredCommands.length,
-        );
-      }
-      return;
-    }
-
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
-      if (filteredCommands.length) {
-        setSelectedCommandIndex(
-          (index) =>
-            (index - 1 + filteredCommands.length) % filteredCommands.length,
-        );
-      }
-      return;
-    }
-
-    if (event.key === "Enter" || event.key === "Tab") {
-      event.preventDefault();
-      if (filteredCommands.length) {
-        runCommand(
-          filteredCommands[
-            Math.min(selectedCommandIndex, filteredCommands.length - 1)
-          ],
-        );
-      }
-      return;
-    }
-
-    if (event.key === "Escape") {
-      event.preventDefault();
-      closeCommandMenu();
-    }
-  }
-
-  function handleKeyDown(
-    event: KeyboardEvent<HTMLDivElement>,
-    block: EditorBlock,
-  ) {
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "c") {
-      if (copySelectedBlocks()) {
-        event.preventDefault();
-      }
-      return;
-    }
-
-    setCurrentBlockId(block.id);
-
-    if (event.key === "Backspace" || event.key === "Delete") {
-      if (deleteSelectedBlocks()) {
-        event.preventDefault();
-        return;
-      }
-    }
-
-    if (event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey) {
-      event.preventDefault();
-      openCommandMenu(block.id);
-      return;
-    }
-
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      insertBlock(block.id, block.type === "bullet" ? "bullet" : "paragraph");
-    }
-
-    if (event.key === "Backspace" && !block.text) {
-      event.preventDefault();
-      if (block.type === "bullet") {
-        changeBlockType(block.id, "paragraph");
-        return;
-      }
-
-      removeBlock(block.id);
-    }
-  }
-
-  function handleEditorInput(event: FormEvent<HTMLDivElement>) {
-    const eventBlock = getEventBlock(event.target);
-    if (!eventBlock) return;
-
-    setCurrentBlockId(eventBlock.block.id);
-    updateBlock(
-      eventBlock.block.id,
-      eventBlock.node.textContent ?? "",
-      eventBlock.node,
-    );
-  }
-
-  function handleEditorKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    const eventBlock = getEventBlock(event.target);
-    const fallbackBlock = blocks.find((block) => block.id === currentBlockId);
-    const block = eventBlock?.block ?? fallbackBlock;
-    if (!block) return;
-
-    setCurrentBlockId(block.id);
-    handleKeyDown(event, block);
-  }
-
-  function handleEditorPointerUp(event: PointerEvent<HTMLDivElement>) {
-    const eventBlock = getEventBlock(event.target);
-    if (eventBlock) {
-      setCurrentBlockId(eventBlock.block.id);
-    }
-  }
-
-  function handlePaste(
-    event: ClipboardEvent<HTMLDivElement>,
-    block: EditorBlock,
-  ) {
-    const pastedText = event.clipboardData.getData("text/plain");
-    if (!pastedText.trim()) return;
-
-    event.preventDefault();
-    closeCommandMenu();
-
-    const pastedBlocks = markdownToEditorBlocks(pastedText);
-    const focusTarget = pastedBlocks[pastedBlocks.length - 1]?.id;
-
-    setBlocks((current) => {
-      const index = current.findIndex((currentBlock) => currentBlock.id === block.id);
-      if (index === -1) return current;
-
-      const next = [...current];
-      const shouldReplaceCurrentBlock = !block.text.trim();
-
-      if (shouldReplaceCurrentBlock) {
-        next.splice(index, 1, ...pastedBlocks);
-      } else {
-        next.splice(index + 1, 0, ...pastedBlocks);
-      }
-
-      return next;
-    });
-
-    if (focusTarget) {
-      setFocusId(focusTarget);
-    }
-  }
-
-  function handleEditorPaste(event: ClipboardEvent<HTMLDivElement>) {
-    const eventBlock = getEventBlock(event.target);
-    if (!eventBlock) return;
-
-    handlePaste(event, eventBlock.block);
-  }
-
-  function handleEditorCopy(event: ClipboardEvent<HTMLDivElement>) {
-    const selectedIds = getSelectedBlockIds();
-    if (selectedIds.length < 2) return;
-
-    const selectedMarkdown = blocks
-      .filter((block) => selectedIds.includes(block.id))
-      .map(blockToMarkdown)
-      .join("\n\n");
-
-    event.preventDefault();
-    event.clipboardData.setData("text/plain", selectedMarkdown);
-  }
 
   async function copyMarkdown() {
     await navigator.clipboard.writeText(markdown);
@@ -855,12 +633,22 @@ export default function MarkdownEditor({
     window.setTimeout(() => setCopied(false), 1200);
   }
 
+  function exportMarkdown() {
+    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const safeTitle = (title.trim() || "untitled").replace(/[^a-z0-9-_]+/gi, "-").replace(/^-|-$/g, "");
+    link.href = url;
+    link.download = `${safeTitle || "untitled"}.md`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   const saveDocument = useCallback(async (
     source: "manual" | "auto" = "manual",
     workspaceOverrideId?: string,
   ) => {
     const targetWorkspaceId = workspaceOverrideId ?? saveWorkspaceId;
-
     if (!savedDocumentId && !targetWorkspaceId) {
       if (source === "manual") {
         setWorkspacePickerOpen(true);
@@ -868,257 +656,126 @@ export default function MarkdownEditor({
       }
       return;
     }
+    if (savingRef.current || (source === "auto" && !hasUnsavedChanges)) return;
 
-    if (savingRef.current) return;
-    if (source === "auto" && !hasUnsavedChanges) return;
-
+    const savedFingerprint = contentFingerprint;
+    const savedTitle = title.trim() || "untitled";
     savingRef.current = true;
     setSaveStatus("saving");
     setSaveError("");
 
-    const endpoint = savedDocumentId
-      ? `/api/documents/${savedDocumentId}`
-      : "/api/documents";
-    const method = savedDocumentId ? "PATCH" : "POST";
-
     try {
-      const response = await fetch(endpoint, {
-        method,
-        headers: {
-          "Content-Type": "application/json",
+      const response = await fetch(
+        savedDocumentId ? `/api/documents/${savedDocumentId}` : "/api/documents",
+        {
+          method: savedDocumentId ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            workspaceId: targetWorkspaceId,
+            content,
+            title: savedTitle,
+            folderPath: "/",
+            visibility,
+          }),
         },
-        body: JSON.stringify({
-          workspaceId: targetWorkspaceId,
-          markdown,
-          title: title.trim() || "untitled",
-          folderPath: "/",
-        }),
-      });
-      const result = (await response.json()) as {
-        document?: { id: string };
-        error?: string;
-      };
-
+      );
+      const result = (await response.json()) as { document?: { id: string }; error?: string };
       if (!response.ok || !result.document) {
         throw new Error(result.error ?? "Unable to save document.");
       }
 
       if (!savedDocumentId) {
         setSavedDocumentId(result.document.id);
-        if (targetWorkspaceId) {
-          setSelectedWorkspaceId(targetWorkspaceId);
-        }
+        if (targetWorkspaceId) setSelectedWorkspaceId(targetWorkspaceId);
         setWorkspacePickerOpen(false);
         const url = new URL(window.location.href);
         url.searchParams.set("docId", result.document.id);
         window.history.replaceState(null, "", url);
       }
 
-      setLastSavedMarkdown(markdown);
-      setLastSavedTitle(title.trim() || "untitled");
+      setLastSavedContent(savedFingerprint);
+      setLastSavedTitle(savedTitle);
+      setLastSavedVisibility(visibility);
       setSaveStatus("saved");
+      if (source === "manual") toast({ message: savedDocumentId ? "Document saved" : "Document created", description: "Your changes are safely stored as structured editor data." });
     } catch (error) {
       setSaveStatus("error");
-      setSaveError(
-        error instanceof Error ? error.message : "Unable to save document.",
-      );
+      setSaveError(error instanceof Error ? error.message : "Unable to save document.");
     } finally {
       savingRef.current = false;
     }
-  }, [hasUnsavedChanges, markdown, savedDocumentId, saveWorkspaceId, title]);
+  }, [content, contentFingerprint, hasUnsavedChanges, saveWorkspaceId, savedDocumentId, title, toast, visibility]);
 
   useEffect(() => {
     if (!hasRemoteSave || !hasUnsavedChanges) return;
-
-    const timeoutId = window.setTimeout(() => {
-      void saveDocument("auto");
-    }, autosaveDelayMs);
-
+    const timeoutId = window.setTimeout(() => void saveDocument("auto"), autosaveDelayMs);
     return () => window.clearTimeout(timeoutId);
   }, [hasRemoteSave, hasUnsavedChanges, saveDocument]);
 
   return (
-    <main className="min-h-screen bg-zinc-50 text-zinc-950">
-      <div className="sticky top-0 z-20 border-b border-zinc-100 bg-white/90 backdrop-blur">
+    <main className="app-theme min-h-screen bg-canvas text-fg">
+      <div className="sticky top-0 z-20 border-b border-border bg-canvas/90 backdrop-blur">
         <div className="flex w-full flex-wrap items-center justify-between gap-4 px-5 py-4 md:px-8">
           <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">
-              Studio Hub Editor
-            </p>
-            <input
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              onBlur={() => {
-                if (!title.trim()) {
-                  setTitle("untitled");
-                }
-              }}
-              aria-label="Document title"
-              className="mt-1 w-full max-w-xl bg-transparent text-xl font-semibold tracking-tight text-zinc-950 outline-none placeholder:text-zinc-300"
-              placeholder="untitled"
-            />
+            <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">Studio Hub</p>
+            <p className="mt-1 text-sm font-medium text-zinc-600">Document editor</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-zinc-600">
-              {words} words
-            </span>
-            <span className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-zinc-600">
-              {readingTime} min read
-            </span>
+            <Select title="Visibility" value={visibility} onValueChange={(value) => setVisibility(value as typeof visibility)} className="w-44"><SelectGroup><SelectItem value="private">Private</SelectItem><SelectItem value="workspace">Workspace only</SelectItem><SelectItem value="public">Public</SelectItem></SelectGroup></Select>
+            <span className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-zinc-600">{words} words</span>
+            <span className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-zinc-600">{readingTime} min read</span>
             {hasRemoteSave ? (
               <span className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-zinc-500">
-                {saveStatus === "saving"
-                  ? "Saving..."
-                  : saveStatus === "saved" && !hasUnsavedChanges
-                    ? "Saved"
-                    : saveStatus === "error"
-                      ? "Save failed"
-                      : "Unsaved"}
+                {saveStatus === "saving" ? "Saving..." : saveStatus === "saved" && !hasUnsavedChanges ? "Saved" : saveStatus === "error" ? "Save failed" : "Unsaved"}
               </span>
             ) : null}
             {!savedDocumentId && selectedWorkspace ? (
-              <button
-                type="button"
-                onClick={() => setWorkspacePickerOpen(true)}
-                className="rounded-md border border-zinc-200 bg-white px-3 py-2 font-medium text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-950"
-              >
+              <button type="button" onClick={() => setWorkspacePickerOpen(true)} className="rounded-md border border-zinc-200 bg-white px-3 py-2 font-medium text-zinc-600 hover:text-zinc-950">
                 {selectedWorkspace.name}
               </button>
             ) : null}
-            <button
-              type="button"
-              onClick={copyMarkdown}
-              className="rounded-md border border-zinc-200 bg-white px-3 py-2 font-medium text-zinc-700 transition-colors hover:border-zinc-300 hover:text-zinc-950"
-            >
-              {copied ? "Copied" : "Copy MD"}
+            <button type="button" onClick={copyMarkdown} className="inline-flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 font-medium text-zinc-700 hover:text-zinc-950">
+              <Copy className="size-4" /> {copied ? "Copied" : "Copy MD"}
             </button>
-            <button
-              type="button"
-              onClick={() => void saveDocument("manual")}
-              disabled={saveStatus === "saving"}
-              className="rounded-md bg-zinc-950 px-4 py-2 font-medium text-white transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
-            >
+            <button type="button" onClick={exportMarkdown} className="inline-flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 font-medium text-zinc-700 hover:text-zinc-950">
+              <Download className="size-4" /> Export MD
+            </button>
+            <button type="button" onClick={() => void saveDocument("manual")} disabled={saveStatus === "saving"} className="rounded-md bg-zinc-950 px-4 py-2 font-medium text-white hover:bg-zinc-800 disabled:opacity-60">
               Save
             </button>
           </div>
         </div>
-        {saveError ? (
-          <div className="border-t border-red-100 bg-red-50 px-5 py-2 text-sm text-red-700 md:px-8">
-            {saveError}
-          </div>
-        ) : null}
+        {saveError ? <div className="border-t border-red-100 bg-red-50 px-5 py-2 text-sm text-red-700 md:px-8">{saveError}</div> : null}
       </div>
 
       {workspacePickerOpen ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/25 px-4 backdrop-blur-sm"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="workspace-picker-title"
-        >
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/25 px-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="workspace-picker-title">
           <div className="w-full max-w-2xl overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-[0_30px_100px_rgba(24,24,27,0.22)]">
             <div className="flex items-start justify-between gap-4 border-b border-zinc-100 px-6 py-5">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                  Save location
-                </p>
-                <h2
-                  id="workspace-picker-title"
-                  className="mt-1 text-2xl font-semibold tracking-tight text-zinc-950"
-                >
-                  Choose a workspace
-                </h2>
-                <p className="mt-1 text-sm text-zinc-500">
-                  Pick where this Markdown document should live.
-                </p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Save location</p>
+                <h2 id="workspace-picker-title" className="mt-1 text-2xl font-semibold tracking-tight">Choose a workspace</h2>
+                <p className="mt-1 text-sm text-zinc-500">Pick where this document should live.</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setWorkspacePickerOpen(false)}
-                className="flex size-10 items-center justify-center rounded-full border border-zinc-200 text-zinc-500 transition-colors hover:border-zinc-300 hover:text-zinc-950"
-                aria-label="Close workspace picker"
-              >
-                <X className="size-4" />
-              </button>
+              <button type="button" onClick={() => setWorkspacePickerOpen(false)} className="flex size-10 items-center justify-center rounded-full border border-zinc-200 text-zinc-500" aria-label="Close workspace picker"><X className="size-4" /></button>
             </div>
-
             <div className="border-b border-zinc-100 px-6 py-4">
               <label className="flex items-center gap-3 rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-zinc-500">
                 <Search className="size-4" />
-                <input
-                  value={workspaceSearch}
-                  onChange={(event) => setWorkspaceSearch(event.target.value)}
-                  placeholder="Search workspaces"
-                  className="w-full bg-transparent text-sm text-zinc-950 outline-none placeholder:text-zinc-400"
-                  autoFocus
-                />
+                <input value={workspaceSearch} onChange={(event) => setWorkspaceSearch(event.target.value)} placeholder="Search workspaces" className="w-full bg-transparent text-sm text-zinc-950 outline-none" autoFocus />
               </label>
             </div>
-
             <div className="max-h-[420px] overflow-auto p-3">
-              {filteredWorkspaces.length ? (
-                <div className="space-y-1">
-                  {filteredWorkspaces.map((workspace) => {
-                    const isSelected = workspace.id === saveWorkspaceId;
-
-                    return (
-                      <button
-                        key={workspace.id}
-                        type="button"
-                        onClick={() => void saveDocument("manual", workspace.id)}
-                        disabled={saveStatus === "saving"}
-                        className={`grid w-full grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-4 rounded-2xl px-4 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-                          isSelected
-                            ? "bg-zinc-950 text-white"
-                            : "text-zinc-700 hover:bg-zinc-100 hover:text-zinc-950"
-                        }`}
-                      >
-                        <span
-                          className={`flex size-11 items-center justify-center rounded-xl text-lg font-semibold ${
-                            isSelected
-                              ? "bg-white text-zinc-950"
-                              : "bg-zinc-950 text-white"
-                          }`}
-                        >
-                          {workspace.icon || workspace.name.slice(0, 1)}
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block truncate font-semibold">
-                            {workspace.name}
-                          </span>
-                          <span
-                            className={`block truncate text-sm ${
-                              isSelected ? "text-zinc-300" : "text-zinc-500"
-                            }`}
-                          >
-                            {workspace.slug}
-                          </span>
-                        </span>
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                            isSelected
-                              ? "bg-white/15 text-white"
-                              : "bg-zinc-100 text-zinc-500"
-                          }`}
-                        >
-                          {saveStatus === "saving" && isSelected
-                            ? "Saving..."
-                            : "Save here"}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
+              {filteredWorkspaces.length ? filteredWorkspaces.map((workspace) => (
+                <button key={workspace.id} type="button" onClick={() => void saveDocument("manual", workspace.id)} disabled={saveStatus === "saving"} className="grid w-full grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-4 rounded-2xl px-4 py-3 text-left text-zinc-700 hover:bg-zinc-100 disabled:opacity-60">
+                  <span className="flex size-11 items-center justify-center rounded-xl bg-zinc-950 text-lg font-semibold text-white">{workspace.icon || workspace.name.slice(0, 1)}</span>
+                  <span className="min-w-0"><span className="block truncate font-semibold">{workspace.name}</span><span className="block truncate text-sm text-zinc-500">{workspace.slug}</span></span>
+                  <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold text-zinc-500">Save here</span>
+                </button>
+              )) : (
                 <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 px-6 py-10 text-center">
-                  <FolderOpen className="mx-auto size-10 text-zinc-300" />
-                  <p className="mt-4 font-semibold text-zinc-900">
-                    No workspaces found
-                  </p>
-                  <p className="mt-2 text-sm text-zinc-500">
-                    Create or join a workspace before saving this document.
-                  </p>
+                  <FolderOpen className="mx-auto size-10 text-zinc-300" /><p className="mt-4 font-semibold">No workspaces found</p>
                 </div>
               )}
             </div>
@@ -1126,277 +783,91 @@ export default function MarkdownEditor({
         </div>
       ) : null}
 
-      <section className="w-full px-4 py-10 md:px-12 lg:px-20">
-        <div className="mx-auto max-w-5xl">
-          <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-            <div className="flex flex-wrap items-center gap-1 border-b border-zinc-100 bg-white px-3 py-2 text-zinc-600">
-              {[
-                { label: "T", title: "Text", action: () => runToolbarCommand("paragraph") },
-                { label: "H1", title: "Heading 1", action: () => runToolbarCommand("title") },
-                { label: "H2", title: "Heading 2", action: () => runToolbarCommand("heading2") },
-                { label: "B", title: "Bold", action: () => document.execCommand("bold") },
-                { label: "•", title: "Bullet", action: () => runToolbarCommand("bullet") },
-                { label: "❝", title: "Quote", action: () => runToolbarCommand("quote") },
-                { label: "</>", title: "Code", action: () => runToolbarCommand("code") },
-                { label: "+", title: "Add block", action: () => insertToolbarBlock("paragraph") },
-                { label: "—", title: "Divider", action: () => insertToolbarBlock("divider") },
-                { label: "↶", title: "Undo", action: () => document.execCommand("undo") },
-                { label: "↷", title: "Redo", action: () => document.execCommand("redo") },
-              ].map((item) => (
-                <button
-                  key={item.title}
-                  type="button"
-                  title={item.title}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    item.action();
-                  }}
-                  className="flex h-8 min-w-8 items-center justify-center rounded-md px-2 text-sm font-medium transition-colors hover:bg-zinc-100 hover:text-zinc-950"
-                >
-                  {item.label}
-                </button>
-              ))}
-              <div className="mx-2 h-5 w-px bg-zinc-200" />
-              <span className="text-sm text-zinc-400">
-                Type <span className="font-mono text-zinc-600">/</span> for commands
-              </span>
+      <section className="min-h-[calc(100vh-5rem)] w-full bg-canvas px-4 md:px-12 lg:px-20">
+        <div className="mx-auto min-h-[calc(100vh-5rem)] max-w-5xl">
+          <div className="relative min-h-[calc(100vh-5rem)] overflow-visible bg-canvas">
+            <div className="flex flex-wrap items-center gap-1 bg-canvas px-3 py-3">
+              <ToolbarButton label="Paragraph" active={activeState?.paragraph} onClick={() => editor?.chain().focus().setParagraph().run()}><Pilcrow className="size-4" /></ToolbarButton>
+              <ToolbarButton label="Heading 1" active={activeState?.heading1} onClick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()}><Heading1 className="size-4" /></ToolbarButton>
+              <ToolbarButton label="Heading 2" active={activeState?.heading2} onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()}><Heading2 className="size-4" /></ToolbarButton>
+              <span className="mx-1 h-6 w-px bg-zinc-200" />
+              <ToolbarButton label="Bold" active={activeState?.bold} onClick={() => editor?.chain().focus().toggleBold().run()}><Bold className="size-4" /></ToolbarButton>
+              <ToolbarButton label="Italic" active={activeState?.italic} onClick={() => editor?.chain().focus().toggleItalic().run()}><Italic className="size-4" /></ToolbarButton>
+              <ToolbarButton label="Strikethrough" active={activeState?.strike} onClick={() => editor?.chain().focus().toggleStrike().run()}><Strikethrough className="size-4" /></ToolbarButton>
+              <ToolbarButton label="Set link" active={activeState?.link} onClick={setLink}><Link2 className="size-4" /></ToolbarButton>
+              <ToolbarButton label="Remove link" disabled={!activeState?.link} onClick={() => editor?.chain().focus().unsetLink().run()}><Unlink className="size-4" /></ToolbarButton>
+              <span className="mx-1 h-6 w-px bg-zinc-200" />
+              <ToolbarButton label="Bulleted list" active={activeState?.bulletList} onClick={() => editor?.chain().focus().toggleBulletList().run()}><List className="size-4" /></ToolbarButton>
+              <ToolbarButton label="Numbered list" active={activeState?.orderedList} onClick={() => editor?.chain().focus().toggleOrderedList().run()}><ListOrdered className="size-4" /></ToolbarButton>
+              <ToolbarButton label="To-do list" active={activeState?.taskList} onClick={() => editor?.chain().focus().toggleTaskList().run()}><CheckSquare className="size-4" /></ToolbarButton>
+              <ToolbarButton label="Toggle list" active={activeState?.details} onClick={() => editor?.chain().focus().setDetails().run()}><ChevronRight className="size-4" /></ToolbarButton>
+              <ToolbarButton label="Quote" active={activeState?.blockquote} onClick={() => editor?.chain().focus().toggleBlockquote().run()}><Quote className="size-4" /></ToolbarButton>
+              <ToolbarButton label="Code block" active={activeState?.codeBlock} onClick={() => editor?.chain().focus().toggleCodeBlock().run()}><Code2 className="size-4" /></ToolbarButton>
+              <ToolbarButton label="Divider" onClick={() => editor?.chain().focus().setHorizontalRule().run()}><Minus className="size-4" /></ToolbarButton>
+              <ToolbarButton label="Image" onClick={insertImage}><ImageIcon className="size-4" /></ToolbarButton>
+              <ToolbarButton label="Video" onClick={insertVideo}><VideoIcon className="size-4" /></ToolbarButton>
+              <ToolbarButton label="Audio" onClick={insertAudio}><AudioLines className="size-4" /></ToolbarButton>
+              <ToolbarButton label="Emoji" onClick={() => {
+                setSlashMenuPosition({ left: Math.max(12, window.innerWidth / 2 - 180), top: 140 });
+                setEmojiPickerOpen(true);
+              }}><Smile className="size-4" /></ToolbarButton>
+              <span className="mx-1 h-6 w-px bg-zinc-200" />
+              <ToolbarButton label="Undo" disabled={!activeState?.canUndo} onClick={() => editor?.chain().focus().undo().run()}><Undo2 className="size-4" /></ToolbarButton>
+              <ToolbarButton label="Redo" disabled={!activeState?.canRedo} onClick={() => editor?.chain().focus().redo().run()}><Redo2 className="size-4" /></ToolbarButton>
+              <span className="ml-2 text-sm text-zinc-400">Type <span className="font-sans text-zinc-600">/</span> for commands</span>
             </div>
 
-            <div
-              ref={editorRootRef}
-              contentEditable
-              suppressContentEditableWarning
-              spellCheck
-              className="min-h-[calc(100vh-14rem)] space-y-2 bg-white px-8 py-10 outline-none md:px-12"
-              onCopy={handleEditorCopy}
-              onInput={handleEditorInput}
-              onKeyDown={handleEditorKeyDown}
-              onPaste={handleEditorPaste}
-              onPointerUp={handleEditorPointerUp}
-            >
-              {blocks.map((block) => (
-                <div
-                  key={block.id}
-                  className="group relative grid grid-cols-[24px_minmax(0,1fr)] gap-3 rounded-xl px-2 py-1 transition-colors hover:bg-zinc-50"
-                >
-                  <div
-                    contentEditable={false}
-                    className="pt-2 text-xs font-medium text-zinc-300 opacity-0 transition-opacity group-hover:opacity-100"
-                  >
-                    {block.type === "paragraph" ? "" : labelFor(block.type)}
-                  </div>
-
-                  {block.type === "divider" ? (
-                    <button
-                      type="button"
-                      contentEditable={false}
-                      onClick={() => changeBlockType(block.id, "paragraph")}
-                      className="my-3 border-t border-zinc-200 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-400"
-                    >
-                      Divider
-                    </button>
-                  ) : (
-                    <div className="flex min-w-0 gap-2">
-                      {block.type === "bullet" ? (
-                        <span
-                          contentEditable={false}
-                          className="mt-3 text-lg text-zinc-400"
-                        >
-                          •
-                        </span>
-                      ) : null}
-                      {block.type === "link" ? (
-                        <button
-                          type="button"
-                          contentEditable={false}
-                          onMouseDown={(event) => event.preventDefault()}
-                          onClick={() =>
-                            setLinkEditorBlockId((current) =>
-                              current === block.id ? null : block.id,
-                            )
-                          }
-                          className="mt-2 flex size-7 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600 ring-1 ring-blue-100 transition-colors hover:bg-blue-100"
-                          aria-label="Edit link URL"
-                        >
-                          <Link2 className="size-4" />
-                        </button>
-                      ) : null}
-                      <div
-                        data-block-id={block.id}
-                        ref={(node) => syncEditableNode(node, block)}
-                        className={getBlockClass(block.type)}
-                        dir="ltr"
-                      />
-                    </div>
-                  )}
-
-                  {linkEditorBlockId === block.id && block.type === "link" ? (
-                    <div
-                      contentEditable={false}
-                      className="absolute left-8 top-12 z-30 w-[min(420px,calc(100vw-3rem))] rounded-2xl border border-zinc-200 bg-white p-3 text-zinc-950 shadow-[0_24px_70px_rgba(24,24,27,0.18)] ring-1 ring-zinc-950/5"
-                    >
-                      <div className="flex items-center gap-2">
-                        <label className="sr-only" htmlFor={`link-url-${block.id}`}>
-                          Link URL
-                        </label>
-                        <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2">
-                          <Link2 className="size-4 shrink-0 text-zinc-400" />
-                          <input
-                            id={`link-url-${block.id}`}
-                            value={block.href ?? ""}
-                            onChange={(event) =>
-                              updateLinkHref(block.id, event.target.value)
-                            }
-                            onKeyDown={(event) => {
-                              event.stopPropagation();
-                              if (event.key === "Escape") {
-                                setLinkEditorBlockId(null);
-                              }
-                            }}
-                            placeholder="https://example.com"
-                            className="min-w-0 flex-1 bg-transparent text-sm text-zinc-950 outline-none placeholder:text-zinc-400"
-                            autoFocus
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          onMouseDown={(event) => event.preventDefault()}
-                          onClick={() => openLink(block)}
-                          className="flex size-10 items-center justify-center rounded-xl border border-zinc-200 text-zinc-500 transition-colors hover:border-zinc-300 hover:text-zinc-950"
-                          aria-label="Open link"
-                        >
-                          <ExternalLink className="size-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onMouseDown={(event) => event.preventDefault()}
-                          onClick={() => setLinkEditorBlockId(null)}
-                          className="flex size-10 items-center justify-center rounded-xl border border-zinc-200 text-zinc-500 transition-colors hover:border-zinc-300 hover:text-zinc-950"
-                          aria-label="Close link editor"
-                        >
-                          <X className="size-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {commandBlockId === block.id ? (
-                    <div
-                      contentEditable={false}
-                      className="absolute left-8 top-11 z-30 w-[min(560px,calc(100vw-3rem))] overflow-hidden rounded-3xl border border-zinc-200/80 bg-white/92 text-zinc-950 shadow-[0_28px_80px_rgba(24,24,27,0.18)] ring-1 ring-zinc-950/5 backdrop-blur-2xl"
-                    >
-                      <div className="border-b border-zinc-200/70 px-4 py-3">
-                        <div className="flex items-center gap-3 rounded-2xl bg-zinc-100/80 px-3 py-2 text-zinc-500 ring-1 ring-zinc-200/80">
-                          <span className="text-xl leading-none">⌕</span>
-                          <span className="font-mono text-sm text-zinc-400">
-                            /
-                          </span>
-                          <input
-                            ref={commandInputRef}
-                            value={commandQuery}
-                            onChange={(event) => {
-                              setCommandQuery(event.target.value);
-                              setSelectedCommandIndex(0);
-                            }}
-                            onKeyDown={handleCommandInputKeyDown}
-                            placeholder="Search..."
-                            className="min-h-6 flex-1 bg-transparent text-lg text-zinc-900 outline-none placeholder:text-zinc-400"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="command-menu-scrollbar max-h-96 overflow-auto px-3 py-3">
-                        {filteredCommands.length ? (
-                          (Object.keys(groupedCommands) as Command["group"][]).map(
-                            (group) =>
-                              groupedCommands[group].length ? (
-                                <div key={group} className="mb-4 last:mb-0">
-                                  <p className="px-3 pb-2 text-sm font-semibold text-zinc-400">
-                                    {group}
-                                  </p>
-                                  <div className="space-y-1">
-                                    {groupedCommands[group].map((command) => {
-                                      const index = filteredCommands.findIndex(
-                                        (item) => item.type === command.type,
-                                      );
-
-                                      return (
-                                        <button
-                                          key={command.type}
-                                          type="button"
-                                          onMouseDown={(event) => {
-                                            event.preventDefault();
-                                            runCommand(command);
-                                          }}
-                                          onMouseEnter={() =>
-                                            setSelectedCommandIndex(index)
-                                          }
-                                          className={`grid w-full grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-4 rounded-2xl px-3 py-3 text-left text-lg transition-colors ${
-                                            index === selectedCommandIndex
-                                              ? "bg-zinc-100 text-zinc-950 shadow-sm ring-1 ring-zinc-200"
-                                              : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-950"
-                                          }`}
-                                        >
-                                          <span className="flex size-8 items-center justify-center rounded-lg bg-zinc-100 text-sm font-semibold text-zinc-500 ring-1 ring-zinc-200/70">
-                                            {labelFor(command.type)}
-                                          </span>
-                                          <span>
-                                            <span className="block font-medium">
-                                              {command.label}
-                                            </span>
-                                            <span className="block text-sm text-zinc-400">
-                                              {command.hint}
-                                            </span>
-                                          </span>
-                                          <span className="font-mono text-sm text-zinc-400">
-                                            {command.shortcut}
-                                          </span>
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              ) : null,
-                          )
-                        ) : (
-                          <p className="px-4 py-5 text-zinc-500">
-                            No commands found
-                          </p>
-                        )}
-                      </div>
-
-                      <button
-                        type="button"
-                        onMouseDown={(event) => {
-                          event.preventDefault();
-                          closeCommandMenu();
-                        }}
-                        className="flex w-full items-center justify-between border-t border-zinc-200/70 px-5 py-4 text-left text-lg font-medium text-zinc-700 hover:bg-zinc-50"
-                      >
-                        Close menu
-                        <span className="text-zinc-400">esc</span>
-                      </button>
-                    </div>
-                  ) : null}
+            {slashMenuOpen ? (
+              <div style={slashMenuPosition} className="fixed z-40 w-[min(520px,calc(100vw-3rem))] overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_24px_70px_rgba(24,24,27,0.18)]">
+                <div className="flex items-center justify-between gap-3 border-b border-zinc-100 px-4 py-3">
+                  <span className="truncate font-sans text-sm text-zinc-700">/{slashSearch}</span>
+                  <span className="shrink-0 text-xs text-zinc-400">Type to filter · Enter to select</span>
                 </div>
-              ))}
-            </div>
+                <div className="command-menu-scrollbar max-h-80 overflow-auto p-2">
+                  {visibleSlashCommands.length ? visibleSlashCommands.map((command, index) => (
+                    <button key={command.label} type="button" onMouseDown={(event) => event.preventDefault()} onMouseEnter={() => setSelectedSlashIndex(index)} onClick={command.run} className={`grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-4 rounded-xl px-3 py-3 text-left ${index === selectedSlashIndex ? "bg-zinc-100 text-zinc-950" : "hover:bg-zinc-50"}`}>
+                      <span><span className="block font-medium">{command.label}</span><span className="block text-sm text-zinc-400">{command.hint}</span></span><span className="font-sans text-sm text-zinc-400">{command.shortcut}</span>
+                    </button>
+                  )) : <p className="px-3 py-6 text-sm text-zinc-500">No commands found.</p>}
+                </div>
+              </div>
+            ) : null}
+
+            {emojiPickerOpen ? (
+              <div style={slashMenuPosition} className="fixed z-40 w-80 rounded-2xl border border-zinc-200 bg-white p-3 shadow-[0_24px_70px_rgba(24,24,27,0.18)]">
+                <div className="mb-2 flex items-center justify-between px-1"><p className="text-sm font-semibold text-zinc-700">Choose an emoji</p><button type="button" onClick={() => { setEmojiPickerOpen(false); editor?.commands.focus(); }} aria-label="Close emoji picker"><X className="size-4 text-zinc-400" /></button></div>
+                <div className="grid grid-cols-6 gap-1">
+                  {emojiChoices.map((choice) => (
+                    <button key={choice.shortcode} type="button" title={choice.label} aria-label={choice.label} onClick={() => { editor?.chain().focus().insertContent(choice.emoji).run(); setEmojiPickerOpen(false); }} className="flex size-11 items-center justify-center rounded-xl text-2xl hover:bg-zinc-100">{choice.emoji}</button>
+                  ))}
+                </div>
+                <p className="mt-2 px-1 text-xs text-zinc-400">Tip: type <span className="font-sans">:smile:</span> for TipTap emoji shortcuts.</p>
+              </div>
+            ) : null}
+
+            <ContextMenu className="block">
+              <EditorContent editor={editor} />
+              {editor ? <ContextMenuContent>
+                <ContextMenuItem onClick={() => editor.chain().focus().toggleBold().run()} shortcut="⌘B"><Bold className="size-4" /> Bold</ContextMenuItem>
+                <ContextMenuItem onClick={() => editor.chain().focus().toggleItalic().run()} shortcut="⌘I"><Italic className="size-4" /> Italic</ContextMenuItem>
+                <ContextMenuItem onClick={() => editor.chain().focus().toggleUnderline().run()} shortcut="⌘U"><Underline className="size-4" /> Underline</ContextMenuItem>
+                <ContextMenuItem onClick={() => editor.chain().focus().toggleStrike().run()} shortcut="⌘⇧S"><Strikethrough className="size-4" /> Strikethrough</ContextMenuItem>
+                <ContextMenuItem onClick={() => editor.chain().focus().toggleCode().run()} shortcut="⌘E"><Code2 className="size-4" /> Inline code</ContextMenuItem>
+                <ContextMenuItem onClick={setLink} shortcut="⌘K"><Link2 className="size-4" /> Add link</ContextMenuItem>
+                <ContextMenuItem separator />
+                <ContextMenuItem onClick={() => editor.chain().focus().setParagraph().run()}><Pilcrow className="size-4" /> Turn into text</ContextMenuItem>
+                <ContextMenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}><Heading1 className="size-4" /> Turn into heading 1</ContextMenuItem>
+                <ContextMenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}><Heading2 className="size-4" /> Turn into heading 2</ContextMenuItem>
+                <ContextMenuItem onClick={() => editor.chain().focus().toggleBulletList().run()}><List className="size-4" /> Turn into bullet list</ContextMenuItem>
+                <ContextMenuItem onClick={() => editor.chain().focus().toggleOrderedList().run()}><ListOrdered className="size-4" /> Turn into numbered list</ContextMenuItem>
+                <ContextMenuItem separator />
+                <ContextMenuItem onClick={() => editor.chain().focus().unsetAllMarks().clearNodes().run()}><X className="size-4" /> Clear formatting</ContextMenuItem>
+              </ContextMenuContent> : null}
+            </ContextMenu>
           </div>
         </div>
       </section>
 
-      <section className="px-4 pb-8 md:px-12 lg:px-20">
-        <details className="mx-auto max-w-5xl rounded-lg border border-zinc-200 bg-white">
-          <summary className="cursor-pointer px-5 py-4 text-sm font-semibold uppercase tracking-wider text-zinc-500">
-            Markdown output
-          </summary>
-          <textarea
-            readOnly
-            value={markdown}
-            className="min-h-72 w-full resize-y border-t border-zinc-100 bg-zinc-950 p-5 font-mono text-sm leading-7 text-zinc-100 outline-none"
-          />
-        </details>
-      </section>
     </main>
   );
 }

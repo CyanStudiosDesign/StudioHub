@@ -1,8 +1,7 @@
 import Link from "next/link";
-import { ArrowLeft, Clock3, PenLine, UserRound } from "lucide-react";
+import { ArrowLeft, Clock3 } from "lucide-react";
 import { notFound, redirect } from "next/navigation";
-import AppShell from "@/components/ui/sidebar/AppShell";
-import { MarkdownArticle } from "@/doc/markdown-renderer";
+import { TiptapArticle } from "@/doc/TiptapArticle";
 import {
   getCoreMembership,
   getCoreWorkspace,
@@ -13,6 +12,11 @@ import {
   createDocumentSlugId,
   getDocumentIdFromSlugId,
 } from "@/lib/document-paths";
+import { isMissingDocumentVisibilityColumn } from "@/lib/document-visibility";
+import {
+  coerceTiptapDocument,
+  tiptapDocumentText,
+} from "@/lib/tiptap-document";
 import { createClient } from "@/utils/supabase/server";
 
 type DocumentViewPageProps = {
@@ -20,173 +24,134 @@ type DocumentViewPageProps = {
 };
 
 function formatDate(value: string | null) {
-  if (!value) return "Not saved yet";
-
+  if (!value) return "Draft";
   return new Intl.DateTimeFormat("en", {
-    dateStyle: "medium",
-    timeStyle: "short",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
   }).format(new Date(value));
 }
 
-export default async function DocumentViewPage({
-  params,
-}: DocumentViewPageProps) {
+export default async function DocumentViewPage({ params }: DocumentViewPageProps) {
   const { docId } = await params;
   const documentId = getDocumentIdFromSlugId(docId);
-  const requestedSlug = docId
-    .replace(documentId, "")
-    .replace(/-+$/g, "")
-    .toLowerCase();
+  const requestedSlug = docId.replace(documentId, "").replace(/-+$/g, "").toLowerCase();
   const supabase = await createClient();
   const {
     data: { user },
     error: userError,
   } = await supabase.auth.getUser();
+  if (userError || !user) redirect("/login");
 
-  if (userError || !user) {
-    redirect("/login");
-  }
-
-  const { workspace: coreWorkspace, setupError } =
-    await getCoreWorkspace(supabase);
-
+  const { workspace: coreWorkspace, setupError } = await getCoreWorkspace(supabase);
   if (setupError || !coreWorkspace) {
     return <SetupErrorScreen message={setupError ?? "Workspace missing."} />;
   }
-
   const membership = await getCoreMembership(supabase, coreWorkspace.id, user.id);
+  if (!membership) redirect("/");
 
-  if (!membership) {
-    redirect("/");
-  }
-
-  const { data: directDocument, error } = await supabase
+  const fields = "id, workspace_id, author_id, title, content_json, content_md, visibility, updated_at" as const;
+  const { data: visibilityDocument, error } = await supabase
     .from("documents")
-    .select("id, workspace_id, author_id, title, content_md, updated_at")
+    .select(fields)
     .eq("id", documentId)
     .maybeSingle();
-  let document = directDocument;
-
-  if (error) {
+  let directDocument = visibilityDocument;
+  if (error && isMissingDocumentVisibilityColumn(error)) {
+    const { data: legacyDocument, error: legacyError } = await supabase
+      .from("documents")
+      .select("id, workspace_id, author_id, title, content_json, content_md, updated_at")
+      .eq("id", documentId)
+      .maybeSingle();
+    if (legacyError) throw new Error(legacyError.message);
+    directDocument = legacyDocument
+      ? { ...legacyDocument, visibility: "workspace" as const }
+      : null;
+  } else if (error) {
     throw new Error(error.message);
   }
 
+  let document = directDocument;
   if (!document) {
-    const { data: visibleDocuments, error: fallbackError } = await supabase
+    const { data: visibilityDocuments, error: fallbackError } = await supabase
       .from("documents")
-      .select("id, workspace_id, author_id, title, content_md, updated_at")
+      .select(fields)
       .order("updated_at", { ascending: false });
-
-    if (fallbackError) {
+    let visibleDocuments = visibilityDocuments ?? [];
+    if (fallbackError && isMissingDocumentVisibilityColumn(fallbackError)) {
+      const { data: legacyDocuments, error: legacyError } = await supabase
+        .from("documents")
+        .select("id, workspace_id, author_id, title, content_json, content_md, updated_at")
+        .order("updated_at", { ascending: false });
+      if (legacyError) throw new Error(legacyError.message);
+      visibleDocuments = legacyDocuments.map((item) => ({
+        ...item,
+        visibility: "workspace" as const,
+      }));
+    } else if (fallbackError) {
       throw new Error(fallbackError.message);
     }
-
-    document =
-      visibleDocuments.find((item) => item.id === documentId) ??
-      visibleDocuments.find(
-        (item) =>
-          requestedSlug.length > 0 && createDocumentSlug(item.title) === requestedSlug,
-      ) ??
+    document = visibleDocuments.find((item) => item.id === documentId) ??
+      visibleDocuments.find((item) => requestedSlug && createDocumentSlug(item.title) === requestedSlug) ??
       null;
-
-    if (!document) {
-      notFound();
-    }
   }
-
-  if (document.workspace_id !== coreWorkspace.id) {
-    notFound();
-  }
+  if (!document) notFound();
 
   const canonicalSlug = createDocumentSlugId(document);
-  if (docId !== canonicalSlug) {
-    redirect(`/docs/${canonicalSlug}`);
-  }
+  if (docId !== canonicalSlug) redirect(`/docs/${canonicalSlug}`);
 
   const { data: author, error: authorError } = await supabase
     .from("profiles")
     .select("full_name, username")
     .eq("id", document.author_id)
     .maybeSingle();
+  if (authorError) throw new Error(authorError.message);
 
-  if (authorError) {
-    throw new Error(authorError.message);
-  }
-
-  const { data: workspace, error: workspaceError } = await supabase
-    .from("workspaces")
-    .select("id, name, icon")
-    .eq("id", document.workspace_id)
-    .eq("is_deleted", false)
-    .maybeSingle();
-
-  if (workspaceError) {
-    throw new Error(workspaceError.message);
-  }
-
-  if (!workspace) {
-    notFound();
-  }
-
-  const authorLabel = author?.full_name || author?.username || "Unknown author";
+  const content = coerceTiptapDocument(document.content_json, document.content_md);
+  const words = tiptapDocumentText(content).split(/\s+/).filter(Boolean).length;
+  const authorLabel = author?.full_name || author?.username || "Studio Hub author";
+  const backHref = document.visibility === "public"
+    ? "/documents?tab=all"
+    : document.visibility === "workspace"
+      ? "/documents?tab=workspace"
+      : "/documents/mine";
 
   return (
-    <AppShell workspaceId={document.workspace_id}>
-      <main className="min-h-screen bg-zinc-50 text-zinc-950">
-        <div className="sticky top-0 z-20 border-b border-zinc-200 bg-white/90 backdrop-blur">
-          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-5 py-4">
-            <div className="flex items-center gap-3">
-              <Link
-                href={`/workspaces/${document.workspace_id}/docs`}
-                aria-label="Back to documentation"
-                className="inline-flex size-10 items-center justify-center rounded-xl border border-zinc-200 text-zinc-500 transition-colors hover:border-zinc-300 hover:text-zinc-950"
-              >
-                <ArrowLeft className="size-4" />
-              </Link>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                  Documentation
-                </p>
-                <p className="mt-1 text-sm font-medium text-zinc-700">
-                  {workspace.icon} {workspace.name}
-                </p>
-              </div>
-            </div>
-
-            <Link
-              href={`/editor?docId=${document.id}`}
-              className="inline-flex h-10 items-center gap-2 rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white transition-colors hover:bg-zinc-800"
-            >
-              <PenLine className="size-4" />
-              Edit document
+    <>
+      <main className="min-h-screen bg-canvas text-fg">
+        <div className="sticky top-0 z-20 border-b border-border bg-canvas/90 backdrop-blur">
+          <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-4">
+            <Link href={backHref} className="inline-flex items-center gap-2 text-sm font-semibold text-fg-muted hover:text-fg">
+              <ArrowLeft className="size-4" /> Back to articles
             </Link>
+            <span className="rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-semibold capitalize text-fg-muted">
+              {document.visibility === "workspace" ? "Workspace only" : document.visibility}
+            </span>
           </div>
         </div>
 
-        <section className="mx-auto max-w-6xl px-5 py-8">
-          <div className="rounded-3xl border border-zinc-200 bg-white px-6 py-5 shadow-sm">
-            <h1 className="text-3xl font-semibold tracking-tight">
+        <article className="mx-auto max-w-4xl px-6 pb-20 pt-14">
+          <header className="mx-auto max-w-3xl border-b border-border pb-10">
+            <h1 className="text-5xl font-semibold leading-[1.08] tracking-tight sm:text-7xl">
               {document.title}
             </h1>
-            <div className="mt-4 flex flex-wrap gap-3 text-sm text-zinc-500">
-              <span className="inline-flex items-center gap-2 rounded-full bg-zinc-100 px-3 py-1.5">
-                <UserRound className="size-4" />
-                {authorLabel}
+            <div className="mt-8 flex items-center gap-4">
+              <span className="flex size-11 items-center justify-center rounded-full bg-gradient-to-br from-primary to-[#066555] text-sm font-bold text-primary-fg">
+                {authorLabel.slice(0, 1).toUpperCase()}
               </span>
-              <span className="inline-flex items-center gap-2 rounded-full bg-zinc-100 px-3 py-1.5">
-                <Clock3 className="size-4" />
-                Updated {formatDate(document.updated_at)}
-              </span>
+              <div>
+                <p className="font-semibold">{authorLabel}</p>
+                <p className="mt-1 flex items-center gap-2 text-sm text-fg-muted">
+                  <Clock3 className="size-3.5" />
+                  {Math.max(1, Math.ceil(words / 200))} min read · {formatDate(document.updated_at)}
+                </p>
+              </div>
             </div>
-          </div>
-        </section>
+          </header>
 
-        <section className="mx-auto max-w-6xl px-5 pb-16">
-          <div className="rounded-3xl border border-zinc-200 bg-white shadow-sm">
-            <MarkdownArticle markdown={document.content_md} />
-          </div>
-        </section>
+          <TiptapArticle content={content} hideTitle />
+        </article>
       </main>
-    </AppShell>
+    </>
   );
 }

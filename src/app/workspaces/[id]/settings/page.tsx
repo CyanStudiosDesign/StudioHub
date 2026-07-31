@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import AppShell from "@/components/ui/sidebar/AppShell";
 import {
   getCoreMembership,
   getCoreWorkspace,
   SetupErrorScreen,
 } from "@/lib/core-workspace";
 import { createClient } from "@/utils/supabase/server";
+import { Select, SelectGroup, SelectItem } from "@/components/ui/select";
 import {
   softDeleteWorkspace,
   updateMemberPermissions,
@@ -157,7 +157,7 @@ export default async function WorkspaceSettingsPage({
   );
 
   return (
-    <AppShell workspaceId={workspace.id}>
+    <>
       <main className="min-h-screen px-6 py-10 text-zinc-950">
         <div className="mx-auto max-w-6xl">
           <div className="mb-8">
@@ -265,15 +265,7 @@ export default async function WorkspaceSettingsPage({
 
                       <label className="space-y-2 text-sm font-medium text-zinc-700">
                         Role
-                        <select
-                          name="role"
-                          defaultValue={isProtectedOwner ? "admin" : member.role}
-                          disabled={isProtectedOwner}
-                          className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-950 disabled:cursor-not-allowed disabled:bg-zinc-50"
-                        >
-                          <option value="member">Member</option>
-                          <option value="admin">Administrator</option>
-                        </select>
+                        <Select name="role" title="Role" defaultValue={isProtectedOwner ? "admin" : member.role} disabled={isProtectedOwner}><SelectGroup><SelectItem value="member">Member</SelectItem><SelectItem value="admin">Administrator</SelectItem></SelectGroup></Select>
                         {isProtectedOwner ? (
                           <span className="block text-xs text-zinc-400">
                             Workspace owner always has administrator access.
@@ -426,6 +418,6 @@ export default async function WorkspaceSettingsPage({
           </div>
         </div>
       </main>
-    </AppShell>
+    </>
   );
 }

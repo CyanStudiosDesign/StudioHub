@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import AppShell from "@/components/ui/sidebar/AppShell";
 import {
   getCoreMembership,
   getCoreWorkspace,
@@ -17,6 +16,7 @@ import { createCreativePost } from "../actions";
 import ActivityFeed from "../_components/ActivityFeed";
 import CampaignHeader from "../_components/CampaignHeader";
 import CreativeGrid from "../_components/CreativeGrid";
+import { Select, SelectGroup, SelectItem } from "@/components/ui/select";
 
 type CampaignPageProps = {
   params: Promise<{ campaignId: string }>;
@@ -221,7 +221,7 @@ export default async function CampaignPage({
   ).length;
 
   return (
-    <AppShell workspaceId={campaign.workspace_id}>
+    <>
       <main className="min-h-screen px-6 py-10 text-zinc-950">
         <div className="mx-auto max-w-7xl space-y-6">
           <CampaignHeader
@@ -241,31 +241,8 @@ export default async function CampaignPage({
                     placeholder="Search creative title"
                     className="h-11 rounded-xl border border-zinc-200 px-3 text-sm outline-none focus:border-zinc-950"
                   />
-                  <select
-                    name="status"
-                    defaultValue={filters.status ?? ""}
-                    className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-950"
-                  >
-                    <option value="">All statuses</option>
-                    <option value="draft">Draft</option>
-                    <option value="improvement_required">
-                      Improvement Required
-                    </option>
-                    <option value="selected">Selected</option>
-                    <option value="rejected">Rejected</option>
-                    <option value="published">Published</option>
-                    <option value="archived">Archived</option>
-                  </select>
-                  <select
-                    name="media"
-                    defaultValue={filters.media ?? ""}
-                    className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-950"
-                  >
-                    <option value="">All media</option>
-                    <option value="image">Images</option>
-                    <option value="video">Videos</option>
-                    <option value="pdf">PDFs</option>
-                  </select>
+                  <Select name="status" title="All statuses" defaultValue={filters.status ?? ""}><SelectGroup><SelectItem value="">All statuses</SelectItem><SelectItem value="draft">Draft</SelectItem><SelectItem value="improvement_required">Improvement Required</SelectItem><SelectItem value="selected">Selected</SelectItem><SelectItem value="rejected">Rejected</SelectItem><SelectItem value="published">Published</SelectItem><SelectItem value="archived">Archived</SelectItem></SelectGroup></Select>
+                  <Select name="media" title="All media" defaultValue={filters.media ?? ""}><SelectGroup><SelectItem value="">All media</SelectItem><SelectItem value="image">Images</SelectItem><SelectItem value="video">Videos</SelectItem><SelectItem value="pdf">PDFs</SelectItem></SelectGroup></Select>
                   <button className="h-11 rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white hover:bg-zinc-800">
                     Filter
                   </button>
@@ -315,22 +292,18 @@ export default async function CampaignPage({
                     placeholder="Creative brief or direction"
                     className="min-h-24 w-full resize-none rounded-xl border border-zinc-200 px-3 py-3 text-sm outline-none focus:border-zinc-950"
                   />
-                  <select
-                    name="ownerId"
-                    className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-950"
-                  >
-                    <option value="">No owner</option>
+                  <Select name="ownerId" title="No owner"><SelectGroup><SelectItem value="">No owner</SelectItem>
                     {workspaceMembers.map((member) => {
                       const profile = profileMap.get(member.user_id);
                       return (
-                        <option key={member.user_id} value={member.user_id}>
+                        <SelectItem key={member.user_id} value={member.user_id}>
                           {profile?.full_name ||
                             profile?.username ||
                             member.user_id}
-                        </option>
+                        </SelectItem>
                       );
                     })}
-                  </select>
+                  </SelectGroup></Select>
                   <label className="block rounded-2xl border border-dashed border-zinc-300 bg-zinc-50 px-4 py-5 text-sm transition hover:border-zinc-400 hover:bg-white">
                     <span className="font-semibold text-zinc-950">
                       Upload initial creative
@@ -397,6 +370,6 @@ export default async function CampaignPage({
           </div>
         </div>
       </main>
-    </AppShell>
+    </>
   );
 }

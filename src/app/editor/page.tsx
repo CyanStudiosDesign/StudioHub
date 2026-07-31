@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import AppShell from "@/components/ui/sidebar/AppShell";
 import MarkdownEditor from "@/editor/MarkdownEditor";
+import { coerceTiptapDocument } from "@/lib/tiptap-document";
+import { isMissingDocumentVisibilityColumn } from "@/lib/document-visibility";
 import {
   getCoreMembership,
   getCoreWorkspace,
@@ -10,8 +11,8 @@ import {
 import { createClient } from "@/utils/supabase/server";
 
 export const metadata: Metadata = {
-  title: "Markdown Editor | Studio Hub",
-  description: "A Notion-inspired live Markdown editor",
+  title: "Document Editor | Studio Hub",
+  description: "A Notion-inspired TipTap document editor",
 };
 
 type EditorPageProps = {
@@ -49,23 +50,34 @@ export default async function EditorPage({ searchParams }: EditorPageProps) {
 
   if (!workspaceId && !docId) {
     return (
-      <AppShell workspaceId={workspace.id}>
+      <>
         <MarkdownEditor
           workspaceId={workspace.id}
           availableWorkspaces={workspaces}
         />
-      </AppShell>
+      </>
     );
   }
 
   if (docId) {
-    const { data: document, error } = await supabase
+    const { data: visibilityDocument, error } = await supabase
       .from("documents")
-      .select("id, workspace_id, title, content_md")
+      .select("id, workspace_id, title, content_json, content_md, visibility")
       .eq("id", docId)
       .maybeSingle();
 
-    if (error) {
+    let document = visibilityDocument;
+    if (error && isMissingDocumentVisibilityColumn(error)) {
+      const { data: legacyDocument, error: legacyError } = await supabase
+        .from("documents")
+        .select("id, workspace_id, title, content_json, content_md")
+        .eq("id", docId)
+        .maybeSingle();
+      if (legacyError) throw new Error(legacyError.message);
+      document = legacyDocument
+        ? { ...legacyDocument, visibility: "workspace" as const }
+        : null;
+    } else if (error) {
       throw new Error(error.message);
     }
 
@@ -78,15 +90,19 @@ export default async function EditorPage({ searchParams }: EditorPageProps) {
     }
 
     return (
-      <AppShell workspaceId={document.workspace_id}>
+      <>
         <MarkdownEditor
           documentId={document.id}
           workspaceId={document.workspace_id}
           initialTitle={document.title}
-          initialMarkdown={document.content_md}
+          initialContent={coerceTiptapDocument(
+            document.content_json,
+            document.content_md,
+          )}
+          initialVisibility={document.visibility}
           availableWorkspaces={workspaces}
         />
-      </AppShell>
+      </>
     );
   }
 
@@ -99,11 +115,11 @@ export default async function EditorPage({ searchParams }: EditorPageProps) {
   }
 
   return (
-    <AppShell workspaceId={workspace.id}>
+    <>
       <MarkdownEditor
         workspaceId={workspace.id}
         availableWorkspaces={workspaces}
       />
-    </AppShell>
+    </>
   );
 }

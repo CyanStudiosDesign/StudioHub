@@ -1,4 +1,8 @@
 import type { Profile, ProjectComment } from "@/types/supabase";
+import {
+  OptimisticForm,
+  OptimisticSubmitButton,
+} from "@/components/ui/forms/OptimisticForm";
 import { addTaskComment } from "../actions";
 
 export default function TaskComments({
@@ -36,7 +40,12 @@ export default function TaskComments({
           </p>
         )}
       </div>
-      <form action={addTaskComment} className="mt-4 space-y-3">
+      <OptimisticForm
+        action={addTaskComment}
+        pendingMessage="Adding comment…"
+        resetOnSubmit
+        className="mt-4 space-y-3"
+      >
         <input type="hidden" name="projectId" value={projectId} />
         {taskId ? <input type="hidden" name="taskId" value={taskId} /> : null}
         <textarea
@@ -45,10 +54,10 @@ export default function TaskComments({
           placeholder="Add a comment, mention, or update"
           className="min-h-24 w-full resize-none rounded-xl border border-zinc-200 px-3 py-3 text-sm outline-none focus:border-zinc-950"
         />
-        <button className="h-10 rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white hover:bg-zinc-800">
+        <OptimisticSubmitButton pendingLabel="Adding…" className="h-10 rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white hover:bg-zinc-800">
           Add comment
-        </button>
-      </form>
+        </OptimisticSubmitButton>
+      </OptimisticForm>
     </section>
   );
 }

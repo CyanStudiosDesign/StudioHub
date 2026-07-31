@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, LayoutDashboard } from "lucide-react";
-import AppShell from "@/components/ui/sidebar/AppShell";
+import {
+  OptimisticForm,
+  OptimisticSubmitButton,
+} from "@/components/ui/forms/OptimisticForm";
+import { Select, SelectGroup, SelectItem } from "@/components/ui/select";
 import {
   getCoreMembership,
   getCoreWorkspace,
@@ -139,7 +143,7 @@ export default async function WorkspaceProjectsPage({
   }, {});
 
   return (
-    <AppShell workspaceId={workspace.id}>
+    <>
       <main className="min-h-screen px-6 py-10 text-zinc-950">
         <div className="mx-auto max-w-6xl">
           <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
@@ -166,8 +170,11 @@ export default async function WorkspaceProjectsPage({
               </div>
             </div>
 
-            <form
+            <OptimisticForm
               action={createProject}
+              pendingMessage="Creating project…"
+              successMessage="Project created"
+              resetOnSubmit
               className="grid gap-3 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm sm:grid-cols-[1fr_1.2fr_auto]"
             >
               <input type="hidden" name="workspaceId" value={workspace.id} />
@@ -184,13 +191,13 @@ export default async function WorkspaceProjectsPage({
                 placeholder="Short description"
                 className="h-11 rounded-xl border border-zinc-200 px-3 text-sm outline-none focus:border-zinc-950"
               />
-              <button
-                type="submit"
+              <OptimisticSubmitButton
+                pendingLabel="Creating…"
                 className="h-11 rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white hover:bg-zinc-800"
               >
                 Create project
-              </button>
-            </form>
+              </OptimisticSubmitButton>
+            </OptimisticForm>
           </div>
 
           <section className="mb-6 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
@@ -253,8 +260,10 @@ export default async function WorkspaceProjectsPage({
                         </Link>
                       </div>
 
-                      <form
+                      <OptimisticForm
                         action={assignProjectMember}
+                        pendingMessage="Assigning member…"
+                        resetOnSubmit
                         className="flex flex-col gap-2 sm:flex-row"
                       >
                         <input
@@ -267,31 +276,15 @@ export default async function WorkspaceProjectsPage({
                           name="projectId"
                           value={project.id}
                         />
-                        <select
-                          name="userId"
-                          required
+                        <Select name="userId" title={unassignedMembers.length ? "Assign member" : "All members assigned"} required disabled={!unassignedMembers.length}><SelectGroup>{unassignedMembers.map((member) => <SelectItem key={member.user_id} value={member.user_id}>{displayName(profileMap.get(member.user_id))}</SelectItem>)}</SelectGroup></Select>
+                        <OptimisticSubmitButton
                           disabled={!unassignedMembers.length}
-                          className="h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-950 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          <option value="">
-                            {unassignedMembers.length
-                              ? "Assign member"
-                              : "All members assigned"}
-                          </option>
-                          {unassignedMembers.map((member) => (
-                            <option key={member.user_id} value={member.user_id}>
-                              {displayName(profileMap.get(member.user_id))}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          type="submit"
-                          disabled={!unassignedMembers.length}
+                          pendingLabel="Assigning…"
                           className="h-10 rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           Assign
-                        </button>
-                      </form>
+                        </OptimisticSubmitButton>
+                      </OptimisticForm>
                     </div>
 
                     <div className="mt-5">
@@ -301,9 +294,10 @@ export default async function WorkspaceProjectsPage({
                       {assignedMembers.length ? (
                         <div className="mt-3 flex flex-wrap gap-2">
                           {assignedMembers.map((member) => (
-                            <form
+                            <OptimisticForm
                               key={member.user_id}
                               action={removeProjectMember}
+                              pendingMessage="Removing member…"
                             >
                               <input
                                 type="hidden"
@@ -320,13 +314,13 @@ export default async function WorkspaceProjectsPage({
                                 name="userId"
                                 value={member.user_id}
                               />
-                              <button
-                                type="submit"
+                              <OptimisticSubmitButton
+                                pendingLabel="Removing…"
                                 className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-sm text-zinc-700 hover:border-red-200 hover:bg-red-50 hover:text-red-700"
                               >
                                 {displayName(profileMap.get(member.user_id))} x
-                              </button>
-                            </form>
+                              </OptimisticSubmitButton>
+                            </OptimisticForm>
                           ))}
                         </div>
                       ) : (
@@ -352,6 +346,6 @@ export default async function WorkspaceProjectsPage({
           )}
         </div>
       </main>
-    </AppShell>
+    </>
   );
 }

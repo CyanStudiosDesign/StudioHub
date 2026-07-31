@@ -16,7 +16,6 @@ import {
   approveWorkspaceJoinRequest,
   rejectWorkspaceJoinRequest,
 } from "@/app/workspaces/core-actions";
-import AppShell from "@/components/ui/sidebar/AppShell";
 import {
   canManageWorkspaceMembers,
   getCoreMembership,
@@ -289,7 +288,7 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
   ].slice(0, 8);
 
   return (
-    <AppShell workspaceId={workspace.id}>
+    <>
       <main className="min-h-screen px-6 py-10 text-zinc-950">
         <div className="mx-auto max-w-7xl space-y-6">
           <section className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
@@ -683,6 +682,6 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
           </section>
         </div>
       </main>
-    </AppShell>
+    </>
   );
 }

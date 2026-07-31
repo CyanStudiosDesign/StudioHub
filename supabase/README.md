@@ -21,7 +21,12 @@ The workspace schema is normalized into separate entities:
 
 Workspace documentation is stored separately:
 
-- `public.documents` stores markdown documents.
+- `public.documents.content_json` stores canonical TipTap/ProseMirror JSON. Legacy
+  rows keep `content_json` null and are hydrated from `content_md` until their
+  next save; `content_md` remains as a generated Markdown export mirror.
+- `public.documents.visibility` controls article access: `public` is visible to
+  signed-in users, `workspace` is visible to members with document access, and
+  `private` is visible only to its author. Existing rows migrate as `workspace`.
 - Each document belongs to one workspace and one author profile.
 - Workspace members can read and update workspace documents.
 - Authors or workspace admins can delete documents.

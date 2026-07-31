@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, CheckCircle2, FileText, Trash2 } from "lucide-react";
-import AppShell from "@/components/ui/sidebar/AppShell";
 import {
   getCoreMembership,
   getCoreWorkspace,
@@ -22,6 +21,7 @@ import MemberAvatarGroup from "../../_components/MemberAvatarGroup";
 import StatusBadge from "../../_components/StatusBadge";
 import VersionTimeline from "../../_components/VersionTimeline";
 import VersionUploader from "../../_components/VersionUploader";
+import { Select, SelectGroup, SelectItem } from "@/components/ui/select";
 
 type CreativeDetailPageProps = {
   params: Promise<{ postId: string }>;
@@ -248,7 +248,7 @@ export default async function CreativeDetailPage({
   );
 
   return (
-    <AppShell workspaceId={post.workspace_id}>
+    <>
       <main className="min-h-screen px-6 py-10 text-zinc-950">
         <div className="mx-auto max-w-7xl">
           <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -349,20 +349,7 @@ export default async function CreativeDetailPage({
                   <input type="hidden" name="postId" value={post.id} />
                   <label className="block text-sm font-medium text-zinc-700">
                     Status
-                    <select
-                      name="status"
-                      defaultValue={post.current_status}
-                      className="mt-2 h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-950"
-                    >
-                      <option value="draft">Draft</option>
-                      <option value="improvement_required">
-                        Improvement Required
-                      </option>
-                      <option value="selected">Selected</option>
-                      <option value="rejected">Rejected</option>
-                      <option value="published">Published</option>
-                      <option value="archived">Archived</option>
-                    </select>
+                    <Select name="status" title="Status" defaultValue={post.current_status} className="mt-2"><SelectGroup><SelectItem value="draft">Draft</SelectItem><SelectItem value="improvement_required">Improvement Required</SelectItem><SelectItem value="selected">Selected</SelectItem><SelectItem value="rejected">Rejected</SelectItem><SelectItem value="published">Published</SelectItem><SelectItem value="archived">Archived</SelectItem></SelectGroup></Select>
                   </label>
                   <button className="h-10 rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white hover:bg-zinc-800">
                     Update status
@@ -414,26 +401,16 @@ export default async function CreativeDetailPage({
                   <input type="hidden" name="workspaceId" value={post.workspace_id} />
                   <input type="hidden" name="campaignId" value={post.campaign_id} />
                   <input type="hidden" name="postId" value={post.id} />
-                  <select
-                    name="userId"
-                    required
-                    disabled={!assignableMembers.length}
-                    className="h-10 min-w-0 flex-1 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-950 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <option value="">
-                      {assignableMembers.length
-                        ? "Assign member"
-                        : "All members assigned"}
-                    </option>
+                  <Select name="userId" title={assignableMembers.length ? "Assign member" : "All members assigned"} required disabled={!assignableMembers.length}><SelectGroup>
                     {assignableMembers.map((member) => {
                       const profile = profileMap.get(member.user_id);
                       return (
-                        <option key={member.user_id} value={member.user_id}>
+                        <SelectItem key={member.user_id} value={member.user_id}>
                           {displayName(profile)}
-                        </option>
+                        </SelectItem>
                       );
                     })}
-                  </select>
+                  </SelectGroup></Select>
                   <button
                     disabled={!assignableMembers.length}
                     className="h-10 rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
@@ -459,6 +436,6 @@ export default async function CreativeDetailPage({
           </div>
         </div>
       </main>
-    </AppShell>
+    </>
   );
 }

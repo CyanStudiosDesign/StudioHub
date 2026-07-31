@@ -4,6 +4,7 @@ import type {
   ProjectTask,
   ProjectTaskAssignee,
 } from "@/types/supabase";
+import type { ReactNode } from "react";
 import PriorityBadge from "./PriorityBadge";
 import ProgressBar from "./ProgressBar";
 import StatusBadge from "./StatusBadge";
@@ -26,11 +27,13 @@ export default function TaskCard({
   assignees,
   subtasks,
   profilesById,
+  statusControl,
 }: {
   task: ProjectTask;
   assignees: ProjectTaskAssignee[];
   subtasks: ProjectSubtask[];
   profilesById: Map<string, Profile>;
+  statusControl?: ReactNode;
 }) {
   const progress = taskProgress(task, subtasks);
 
@@ -75,6 +78,7 @@ export default function TaskCard({
               .join(", ")
           : "no one"}
       </p>
+      {statusControl ? <div className="mt-3 border-t border-border pt-3">{statusControl}</div> : null}
     </article>
   );
 }

@@ -1,0 +1,13 @@
+{
+  "componentsDir": "src/components",
+  "uiDir": "src/components/ui",
+  "blocksDir": "src/components/blocks",
+  "textDir": "src/components/text",
+  "animateDir": "src/components/animate",
+  "fieldDir": "src/components/field",
+  "providersDir": "src/components/providers",
+  "motionDir": "src/motion",
+  "utilsPath": "src/lib/utils.ts",
+  "cssPath": "src/app/globals.css",
+  "alias": "@"
+}
